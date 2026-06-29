@@ -38,8 +38,10 @@ uint32 ChunkMeshDataRunnable::Run() {
 
 		Time start = std::chrono::high_resolution_clock::now();
 
-		CreateBinarySolidColumnsYXZ();
+		GenerateTerrainPatch();
+		CreateBinarySolidColumnsYXZ(TerrainPatch);
 		CreateTerrainMeshesData();
+		AddSpawnLocationsForTerrainPatch(TerrainPatch);
 
 		Time end = std::chrono::high_resolution_clock::now();
 
@@ -80,29 +82,22 @@ void ChunkMeshDataRunnable::SetPerlinNoiseSettings(APerlinNoiseSettings* InPerli
 	PerlinNoiseSettingsRef = InPerlinNoiseSettingsRef;
 }
 
-void ChunkMeshDataRunnable::CreateBinarySolidColumnsYXZ() {
+void ChunkMeshDataRunnable::GenerateTerrainPatch() {
 	const FVector chunkWorldLocation = ChunkLocationData.ObjectPosition;
 
-	// Set the chunk values to air for all 3 axis (Y, X, Z)
-	binaryChunk.yBinaryColumn = std::vector<uint64_t>(WTSR->chunkSizePadding * WTSR->chunkSizePadding * WTSR->intsPerHeight, 0);
-	binaryChunk.xBinaryColumn = std::vector<uint64_t>(WTSR->chunkSizePadding * WTSR->chunkSizePadding * WTSR->intsPerHeight, 0);
-	binaryChunk.zBinaryColumn = std::vector<uint64_t>(WTSR->chunkSizePadding * WTSR->chunkSizePadding * WTSR->intsPerHeight, 0);
-	
-	// Vegetation spawn area 
-	int vegetationXZLimit = WTSR->chunkSizePadding - WTSR->chunkSize - 1;
-	
-	// Surface voxel points that will be used for pathfinding
-	TArray<int> surfaceVoxelPoints;
+	TerrainPatch = FTerrainPatch();
+	TerrainPatch.ChunkCoordinates = ChunkLocationData.ObjectWorldCoords;
+	TerrainPatch.ChunkWorldLocation = chunkWorldLocation;
+	TerrainPatch.ChunkSizePadding = WTSR->chunkSizePadding;
+	TerrainPatch.PaddedHeights.Reserve(WTSR->chunkSizePadding * WTSR->chunkSizePadding);
 
 	// Holding the correct noise settings for each noise type
 	const FNoiseMapSettings& continentalnessSettings = PNSR->noiseMapSettings[0];
 	const FNoiseMapSettings& erosionSettings = PNSR->noiseMapSettings[1];
 	const FNoiseMapSettings& peaksAndValleysSettings = PNSR->noiseMapSettings[2];
 
-	// Holding spawn points for vegetation or NPC
-	struct FSpawnPoint { int X, Z, Y; };
-	TArray<FSpawnPoint> spawnPoints;
-
+	// Vegetation spawn area
+	const int vegetationXZLimit = WTSR->chunkSizePadding - WTSR->chunkSize - 1;
 
 	// Loop over the chunk dimensions (X, Y, Z)
 	for (int x = 0; x < WTSR->chunkSizePadding; x++) {
@@ -172,30 +167,46 @@ void ChunkMeshDataRunnable::CreateBinarySolidColumnsYXZ() {
 			const int combinedNoiseHeight = static_cast<int>(std::floor(continentalnessHeight + erosionHeight + peaksAndValleysHeight));
 
 			// Ensuring height remains between chunk borders
-			int height = std::clamp(combinedNoiseHeight, 0, static_cast<int>(WTSR->chunkHeight));
+			const int height = std::clamp(combinedNoiseHeight, 0, static_cast<int>(WTSR->chunkHeight));
+			TerrainPatch.PaddedHeights.Add(height);
 
 			// Add vegetation and voxel surface point only for voxels inside the chunk (not including padding)
 			const bool isInsideChunkTopAndLeft = x >= vegetationXZLimit && z >= vegetationXZLimit;
 			const bool isInsideChunkBotAndRight = x <= WTSR->chunkSize && z <= WTSR->chunkSize;
 			const bool isInsideChunk = isInsideChunkTopAndLeft && isInsideChunkBotAndRight;
 			if (isInsideChunk) {
-				// Add the voxel point to the surface voxel points array
-				surfaceVoxelPoints.Add(height);
-
-				// Storing vegetation or NPC spawn points for the current voxel point
-				spawnPoints.Add({ x, z, height });
+				TerrainPatch.SurfacePoints.Add(FTerrainSurfacePoint{ x, z, height });
 			}
+		}
+	}
+}
+
+void ChunkMeshDataRunnable::CreateBinarySolidColumnsYXZ(const FTerrainPatch& InTerrainPatch) {
+	if (!InTerrainPatch.IsValid()) {
+		UE_LOG(LogTemp, Error, TEXT("Invalid terrain patch for chunk X:%d Z:%d"), ChunkLocationData.ObjectWorldCoords.X, ChunkLocationData.ObjectWorldCoords.Y);
+		return;
+	}
+
+	// Set the chunk values to air for all 3 axis (Y, X, Z)
+	binaryChunk.yBinaryColumn = std::vector<uint64_t>(WTSR->chunkSizePadding * WTSR->chunkSizePadding * WTSR->intsPerHeight, 0);
+	binaryChunk.xBinaryColumn = std::vector<uint64_t>(WTSR->chunkSizePadding * WTSR->chunkSizePadding * WTSR->intsPerHeight, 0);
+	binaryChunk.zBinaryColumn = std::vector<uint64_t>(WTSR->chunkSizePadding * WTSR->chunkSizePadding * WTSR->intsPerHeight, 0);
+
+	// Loop over the chunk dimensions (X, Y, Z)
+	for (int x = 0; x < WTSR->chunkSizePadding; x++) {
+		for (int z = 0; z < WTSR->chunkSizePadding; z++) {
+			int remainingHeight = InTerrainPatch.GetHeight(x, z);
 
 			// Add enough bits to y to cover the entire height (4 64bit integers when the max height is 256)
 			for (int bitIndex = 0; bitIndex < WTSR->intsPerHeight; bitIndex++) {
 				uint64_t yHeight;
 
-				if (height >= 64) {
+				if (remainingHeight >= 64) {
 					yHeight = ~0ULL; // Set all bits to 1
-					height -= 64;
+					remainingHeight -= 64;
 				} else {
-					yHeight = (1ULL << height) - 1; // Set bits = height
-					height = 0;
+					yHeight = (1ULL << remainingHeight) - 1; // Set bits = height
+					remainingHeight = 0;
 				}
 
 				// Get index of y 
@@ -246,10 +257,15 @@ void ChunkMeshDataRunnable::CreateBinarySolidColumnsYXZ() {
 
 		}
 	}
+}
 
-	// Get a list of all the spawn points for vegetation and NPCs
-	for (const FSpawnPoint& spawnPoint : spawnPoints) {
-		AddSpawnLocationForVegetationOrNpc(spawnPoint.X, spawnPoint.Z, spawnPoint.Y, chunkWorldLocation);
+void ChunkMeshDataRunnable::AddSpawnLocationsForTerrainPatch(const FTerrainPatch& InTerrainPatch) {
+	TArray<int> surfaceVoxelPoints;
+	surfaceVoxelPoints.Reserve(InTerrainPatch.SurfacePoints.Num());
+
+	for (const FTerrainSurfacePoint& SurfacePoint : InTerrainPatch.SurfacePoints) {
+		surfaceVoxelPoints.Add(SurfacePoint.Height);
+		AddSpawnLocationForVegetationOrNpc(SurfacePoint.X, SurfacePoint.Z, SurfacePoint.Height, InTerrainPatch.ChunkWorldLocation);
 	}
 
 	// Send all the spawn points to CLDR

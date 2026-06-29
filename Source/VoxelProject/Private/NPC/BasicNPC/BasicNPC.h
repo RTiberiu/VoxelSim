@@ -15,9 +15,9 @@
 #include "..\..\Pathfinding\PathfindingThreadPool\PathfindingThreadManager.h"
 #include "..\..\Pathfinding\SearchLibrary\Path.h"
 #include "..\..\Utils\CustomMesh\CustomProceduralMeshComponent.h"
-#include "BasicNPC.generated.h"
 #include "Templates/UniquePtr.h"
 #include <variant>
+#include "BasicNPC.generated.h"
 
 class UDecisionSystemNPC;
 class PathfindingThreadManager;

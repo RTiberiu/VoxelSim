@@ -6,11 +6,11 @@
 #include "..\DataStructures\VoxelObjectLocationData.h"
 #include "..\DataStructures\VoxelObjectMeshData.h"
 #include "..\Vegetation\Trees\Tree.h"
-#include "ChunkLocationData.generated.h"
 #include "Containers/Queue.h"
 #include "CoreMinimal.h"
 #include "Misc/ScopeLock.h"
 #include "Templates/UniquePtr.h"
+#include "ChunkLocationData.generated.h"
 
 class ABasicNPC;
 class WorldTerrainSettings;

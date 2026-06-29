@@ -8,6 +8,7 @@
 
 #include "..\DataStructures\VoxelObjectMeshData.h"
 #include "..\DataStructures\VoxelObjectLocationData.h"
+#include "..\DataStructures\TerrainPatch.h"
 #include "..\..\NPC\SettingsNPC\RelationshipSettingsNPC.h" // For the AnimalType enum
 #include "CoreMinimal.h"
 
@@ -53,6 +54,7 @@ private:
 	APerlinNoiseSettings*& PNSR = PerlinNoiseSettingsRef;
 
 	FVoxelObjectLocationData ChunkLocationData;
+	FTerrainPatch TerrainPatch;
 
 	FThreadSafeBool isRunning;
 	FThreadSafeBool isTaskComplete;
@@ -70,7 +72,11 @@ private:
 
 	TArray<FVector2D> surfaceAvoidPositions;
 
-	void CreateBinarySolidColumnsYXZ();
+	void GenerateTerrainPatch();
+
+	void CreateBinarySolidColumnsYXZ(const FTerrainPatch& InTerrainPatch);
+
+	void AddSpawnLocationsForTerrainPatch(const FTerrainPatch& InTerrainPatch);
 
 	void FaceCullingBinaryColumnsYXZ(std::vector<std::vector<uint64_t>>& columnFaceMasks);
 

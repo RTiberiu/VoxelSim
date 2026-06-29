@@ -12,11 +12,11 @@
 #include "..\..\Utils\Semaphore\FairSemaphore.h"
 #include "..\DataStructures\VoxelObjectLocationData.h"
 #include "..\DataStructures\VoxelObjectMeshData.h"
+#include <Chunks/SingleChunk/BinaryChunk.h>
+#include <Chunks/Vegetation/Trees/Tree.h>
 #include "CoreMinimal.h"
 #include "Templates/UniquePtr.h"
 #include "WorldTerrainSettings.generated.h"
-#include <Chunks/SingleChunk/BinaryChunk.h>
-#include <Chunks/Vegetation/Trees/Tree.h>
 
 class FastNoiseLite;
 class APerlinNoiseSettings;
