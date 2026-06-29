@@ -2,184 +2,184 @@
 
 #include "..\..\Utils\Semaphore\FairSemaphore.h"
 
-#include "CoreMinimal.h"
-#include "..\Vegetation\Trees\Tree.h"
-#include "..\DataStructures\VoxelObjectMeshData.h"
-#include "..\DataStructures\VoxelObjectLocationData.h"
-#include "Containers/Queue.h"
 #include "..\..\NPC\BasicNPC\BasicNPC.h"
+#include "..\DataStructures\VoxelObjectLocationData.h"
+#include "..\DataStructures\VoxelObjectMeshData.h"
+#include "..\Vegetation\Trees\Tree.h"
+#include "ChunkLocationData.generated.h"
+#include "Containers/Queue.h"
+#include "CoreMinimal.h"
 #include "Misc/ScopeLock.h"
 #include "Templates/UniquePtr.h"
-#include "ChunkLocationData.generated.h"
 
 class ABasicNPC;
 class WorldTerrainSettings;
 
+struct FChunkMeshBuildResult {
+	FVoxelObjectLocationData LocationData;
+	FVoxelObjectMeshData MeshData;
+};
+
+struct FNavigationSurfaceChunk {
+	TArray<int> SurfaceVoxelPoints;
+	TArray<FVector2D> SurfaceAvoidPoints;
+};
+
 UCLASS()
-class  UChunkLocationData : public UObject {
-    GENERATED_BODY()
+class UChunkLocationData : public UObject {
+	GENERATED_BODY()
 
-public:
-    UChunkLocationData();
+  public:
+	UChunkLocationData();
 
-    ~UChunkLocationData();
+	~UChunkLocationData();
 
-    void SetWorldTerrainSettings(UWorldTerrainSettings* InWorldTerrainSettings);
+	void SetWorldTerrainSettings(UWorldTerrainSettings* InWorldTerrainSettings);
 
-    bool getChunkToSpawnPosition(FVoxelObjectLocationData& OutLocation);
-    bool getChunkToDestroyPosition(FIntPoint& OutPosition);
+	bool getChunkToSpawnPosition(FVoxelObjectLocationData& OutLocation);
+	bool getChunkToDestroyPosition(FIntPoint& OutPosition);
 
-    bool getComputedMeshDataAndLocationData(FVoxelObjectLocationData& locationData, FVoxelObjectMeshData& meshData);
-    bool isMeshWaitingToBeSpawned();
+	bool getComputedMeshDataAndLocationData(FVoxelObjectLocationData& locationData, FVoxelObjectMeshData& meshData);
+	bool isMeshWaitingToBeSpawned();
 
-    void AddChunksToSpawnPosition(const FVoxelObjectLocationData position);
-    void AddChunksToDestroyPosition(const FIntPoint& position);
-    void AddMeshDataForPosition(const FVoxelObjectLocationData chunkLocationData, const FVoxelObjectMeshData meshData);
+	void AddChunksToSpawnPosition(const FVoxelObjectLocationData position);
+	void AddChunksToDestroyPosition(const FIntPoint& position);
+	void AddMeshDataForPosition(const FVoxelObjectLocationData chunkLocationData, const FVoxelObjectMeshData meshData);
 
-    void AddTreeToDestroyPosition(const FIntPoint& tree);
-    bool GetTreeToDestroyPosition(FIntPoint& tree);
-    
-    void emptyPositionQueues();
+	void AddTreeToDestroyPosition(const FIntPoint& tree);
+	bool GetTreeToDestroyPosition(FIntPoint& tree);
 
-    void AddVegetationChunkSpawnPosition(FIntPoint& chunkPosition);
-    void AddTreeChunkSpawnPosition(FIntPoint& chunkPosition);
-    void AddNpcChunkSpawnPosition(FIntPoint& chunkPosition);
-    void RemoveVegetationChunkSpawnPosition(FIntPoint& chunkPosition);
-    void RemoveTreeChunkSpawnPosition(FIntPoint& chunkPosition);
-    void RemoveNpcChunkSpawnPosition(FIntPoint& chunkPosition);
-    void CheckForSpawnPointsInRange();
-    void CheckAndAddVegetationNotInRange(
-        TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove,
-        TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove
-    );
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> GetVegetationChunkSpawnPoints() const;
+	void emptyPositionQueues();
 
-    void CheckAndAddTreesNotInRange(TQueue<ATree*>* TreeActorsToRemove);
-    void CheckAndAddNpcsNotInRange(TQueue<ABasicNPC*>* NpcActorsToRemove);
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> GetTreeChunkSpawnPoints() const;
+	void AddVegetationChunkSpawnPosition(FIntPoint& chunkPosition);
+	void AddTreeChunkSpawnPosition(FIntPoint& chunkPosition);
+	void AddNpcChunkSpawnPosition(FIntPoint& chunkPosition);
+	void RemoveVegetationChunkSpawnPosition(FIntPoint& chunkPosition);
+	void RemoveTreeChunkSpawnPosition(FIntPoint& chunkPosition);
+	void RemoveNpcChunkSpawnPosition(FIntPoint& chunkPosition);
+	void CheckForSpawnPointsInRange();
+	void CheckAndAddVegetationNotInRange(
+	    TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove,
+	    TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove
+	);
+	TSet<FIntPoint> GetVegetationChunkSpawnPoints() const;
 
-    TArray<FVoxelObjectLocationData> getTreeSpawnPositions();
-    TArray<FVoxelObjectLocationData> getGrassSpawnPosition();
-    TArray<FVoxelObjectLocationData> getFlowerSpawnPosition();
-    TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPosition();
-    TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>*> GetNpcChunkSpawnPoints() const;
+	void CheckAndAddTreesNotInRange(TQueue<ATree*>* TreeActorsToRemove);
+	void CheckAndAddNpcsNotInRange(TQueue<ABasicNPC*>* NpcActorsToRemove);
+	TSet<FIntPoint> GetTreeChunkSpawnPoints() const;
 
-    TArray<FVoxelObjectLocationData> getTreeSpawnPositionsInRange();
-    TArray<FVoxelObjectLocationData> getGrassSpawnPositionInRange();
-    TArray<FVoxelObjectLocationData> getFlowerSpawnPositionInRange();
-    TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPositionInRange();
+	TArray<FVoxelObjectLocationData> getTreeSpawnPositions();
+	TArray<FVoxelObjectLocationData> getGrassSpawnPosition();
+	TArray<FVoxelObjectLocationData> getFlowerSpawnPosition();
+	TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPosition();
+	TSet<FIntPoint> GetNpcChunkSpawnPoints() const;
 
-    // Methods to add single spawn points for vegetation and NPCs
-    void addTreeSpawnPosition(const FVoxelObjectLocationData position);
-    void addGrassSpawnPosition(const FVoxelObjectLocationData position);
-    void addFlowerSpawnPosition(const FVoxelObjectLocationData position);
-    void addNPCSpawnPosition(const TPair<FVoxelObjectLocationData, AnimalType> positionAndType);
+	TArray<FVoxelObjectLocationData> getTreeSpawnPositionsInRange();
+	TArray<FVoxelObjectLocationData> getGrassSpawnPositionInRange();
+	TArray<FVoxelObjectLocationData> getFlowerSpawnPositionInRange();
+	TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPositionInRange();
 
-    // Methods to add batch spawn points for vegetation and NPCs
-    void addTreeSpawnPositions(const TArray<FVoxelObjectLocationData>& positions);
-    void addGrassSpawnPositions(const TArray<FVoxelObjectLocationData>& positions);
-    void addFlowerSpawnPositions(const TArray<FVoxelObjectLocationData>& positions);
-    void addNPCSpawnPositions(const TArray<TPair<FVoxelObjectLocationData, AnimalType>>& positionsAndTypes);
+	// Methods to add single spawn points for vegetation and NPCs
+	void addTreeSpawnPosition(const FVoxelObjectLocationData position);
+	void addGrassSpawnPosition(const FVoxelObjectLocationData position);
+	void addFlowerSpawnPosition(const FVoxelObjectLocationData position);
+	void addNPCSpawnPosition(const TPair<FVoxelObjectLocationData, AnimalType> positionAndType);
 
-    void RemoveTreeSpawnPosition(const FIntPoint& point);
-    void RemoveGrassSpawnPosition(const FIntPoint& point);
-    void RemoveFlowerSpawnPosition(const FIntPoint& point);
-    void RemoveNPCSpawnPosition(const FIntPoint& point);
+	// Methods to add batch spawn points for vegetation and NPCs
+	void addTreeSpawnPositions(const TArray<FVoxelObjectLocationData>& positions);
+	void addGrassSpawnPositions(const TArray<FVoxelObjectLocationData>& positions);
+	void addFlowerSpawnPositions(const TArray<FVoxelObjectLocationData>& positions);
+	void addNPCSpawnPositions(const TArray<TPair<FVoxelObjectLocationData, AnimalType>>& positionsAndTypes);
 
-    bool AddUnspawnedTreeToDestroy(ATree* InTreeToDestroy);
-    bool GetUnspawnedTreeToDestroy(ATree* InTreeToDestroy);
+	void RemoveTreeSpawnPosition(const FIntPoint& point);
+	void RemoveGrassSpawnPosition(const FIntPoint& point);
+	void RemoveFlowerSpawnPosition(const FIntPoint& point);
+	void RemoveNPCSpawnPosition(const FIntPoint& point);
 
-    bool AddUnspawnedGrassToDestroy(UProceduralMeshComponent* InGrassToDestroy);
-    bool GetUnspawnedGrassToDestroy(UProceduralMeshComponent* InGrassToDestroy);
+	bool AddUnspawnedTreeToDestroy(ATree* InTreeToDestroy);
+	bool GetUnspawnedTreeToDestroy(ATree* InTreeToDestroy);
 
-    bool AddUnspawnedFlowerToDestroy(UProceduralMeshComponent* InFlowerToDestroy);
-    bool GetUnspawnedFlowerToDestroy(UProceduralMeshComponent* InFlowerToDestroy);
+	bool AddUnspawnedGrassToDestroy(UProceduralMeshComponent* InGrassToDestroy);
+	bool GetUnspawnedGrassToDestroy(UProceduralMeshComponent* InGrassToDestroy);
 
-    bool AddUnspawnedNpcToDestroy(ABasicNPC* InNpcToDestroy);
-    bool GetUnspawnedNpcToDestroy(ABasicNPC* InNpcToDestroy);
+	bool AddUnspawnedFlowerToDestroy(UProceduralMeshComponent* InFlowerToDestroy);
+	bool GetUnspawnedFlowerToDestroy(UProceduralMeshComponent* InFlowerToDestroy);
+
+	bool AddUnspawnedNpcToDestroy(ABasicNPC* InNpcToDestroy);
+	bool GetUnspawnedNpcToDestroy(ABasicNPC* InNpcToDestroy);
 
 	void AddSurfaceVoxelPointsForChunk(const FIntPoint& chunkPosition, const TArray<int>& voxelPoints, const TArray<FVector2D>& avoidPoints);
 	void RemoveSurfaceVoxelPointsForChunk(const FIntPoint& chunkPosition);
-    TMap<FIntPoint, TArray<int>> GetSurfaceVoxelPoints();
+	TMap<FIntPoint, TArray<int>> GetSurfaceVoxelPoints();
 
-    bool IsSurfacePointValid(const double& X, const double& Z);
+	bool IsSurfacePointValid(const double& X, const double& Z);
 
-    bool IsLocationOccupied(const FVector& currentPosition, const FVector& nextPosition, ABasicNPC* npcAtLocation);
-    bool IsLocationOccupied(const FIntPoint& position);
-    void AddOccupiedVoxelPosition(const FVector& position, ABasicNPC* npcAtLocation);
-    void RemoveOccupiedVoxelPosition(const FVector& position);
+	bool IsLocationOccupied(const FVector& currentPosition, const FVector& nextPosition, ABasicNPC* npcAtLocation);
+	bool IsLocationOccupied(const FIntPoint& position);
+	void AddOccupiedVoxelPosition(const FVector& position, ABasicNPC* npcAtLocation);
+	void RemoveOccupiedVoxelPosition(const FVector& position);
 	TMap<FIntPoint, ABasicNPC*> GetOccupiedVoxels() const;
 
-private:
-    UWorldTerrainSettings* WorldTerrainSettingsRef;
-    UWorldTerrainSettings*& WTSR = WorldTerrainSettingsRef;
+  private:
+	UWorldTerrainSettings* WorldTerrainSettingsRef;
+	UWorldTerrainSettings*& WTSR = WorldTerrainSettingsRef;
 
-    const int chunkSize{ 62 }; 
+	const int chunkSize{62};
 
-    // Queue for storing chunks position that need to be spawned
-    TQueue<FVoxelObjectLocationData> chunksToSpawnPositions;
-    TUniquePtr<FairSemaphore> ChunksToSpawnSemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
+	// Queue for storing chunks position that need to be spawned
+	TQueue<FVoxelObjectLocationData> chunksToSpawnPositions;
+	TUniquePtr<FairSemaphore> ChunksToSpawnSemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
 
-    // Queue for storing chunks position that need to be destroyed
-    TQueue<FIntPoint> chunksToDestroyPositions;
-    TUniquePtr<FairSemaphore> ChunksToDestroySemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
+	// Queue for storing chunks position that need to be destroyed
+	TQueue<FIntPoint> chunksToDestroyPositions;
+	TUniquePtr<FairSemaphore> ChunksToDestroySemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
 
-    TQueue<ATree*> unspawnedTreesToDestroy;
-    TQueue<UProceduralMeshComponent*> unspawnedGrassToDestroy;
-    TQueue<UProceduralMeshComponent*> unspawnedFlowerToDestroy;
-    TQueue<ABasicNPC*> unspawnedNpcsToDestroy;
+	TQueue<ATree*> unspawnedTreesToDestroy;
+	TQueue<UProceduralMeshComponent*> unspawnedGrassToDestroy;
+	TQueue<UProceduralMeshComponent*> unspawnedFlowerToDestroy;
+	TQueue<ABasicNPC*> unspawnedNpcsToDestroy;
 
-    TQueue<FIntPoint> treesToDestroy;
-    TQueue<FIntPoint> grassToDestroy;
-    TQueue<FIntPoint> flowersToDestroy;
-    TQueue<FIntPoint> npcsToDestroy;
+	TQueue<FIntPoint> treesToDestroy;
+	TQueue<FIntPoint> grassToDestroy;
+	TQueue<FIntPoint> flowersToDestroy;
+	TQueue<FIntPoint> npcsToDestroy;
 
-    // Queue for storing chunks mesh data
-    TQueue<FVoxelObjectLocationData> locationDataForComputedMeshes;
-    TQueue<FVoxelObjectMeshData> computedMeshData;
+	// Queue for storing chunks mesh data
+	TQueue<FChunkMeshBuildResult> ComputedMeshResults;
 
-    // Queue for storing all vegetation spawn points data (even outside of the LOD range)
-    TUniquePtr<FairSemaphore> TreesToSpawnSemaphore;
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>> treesSpawnPositions;
+	// Queue for storing all vegetation spawn points data (even outside of the LOD range)
+	TUniquePtr<FairSemaphore> TreesToSpawnSemaphore;
+	TMap<FIntPoint, TArray<FVoxelObjectLocationData>> treesSpawnPositions;
 
-    TUniquePtr<FairSemaphore> GrassToSpawnSemaphore;
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>> grassSpawnPositions;
+	TUniquePtr<FairSemaphore> GrassToSpawnSemaphore;
+	TMap<FIntPoint, TArray<FVoxelObjectLocationData>> grassSpawnPositions;
 
-    TUniquePtr<FairSemaphore> FlowersToSpawnSemaphore;
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>> flowersSpawnPositions;
+	TUniquePtr<FairSemaphore> FlowersToSpawnSemaphore;
+	TMap<FIntPoint, TArray<FVoxelObjectLocationData>> flowersSpawnPositions;
 
-    TUniquePtr<FairSemaphore> NPCToSpawnSemaphore;
-    TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>> npcSpawnPositions;
+	TUniquePtr<FairSemaphore> NPCToSpawnSemaphore;
+	TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>> npcSpawnPositions;
 
-    // Map to store the current Chunk Points where Vegetation should spawn
-    // Note: This holds a reference to the grassSpawnPositions/flowersSpawnPositions
-    // and when clearing those maps, the references should also be cleared from this one.
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> VegetationChunkSpawnPoints;
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> TreeChunkSpawnPoints;
-    TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>*> NpcChunkSpawnPoints;
+	// Storing the current chunk points where vegetation should spawn
+	TSet<FIntPoint> VegetationChunkSpawnPoints;
+	TSet<FIntPoint> TreeChunkSpawnPoints;
+	TSet<FIntPoint> NpcChunkSpawnPoints;
 
-    TUniquePtr<FairSemaphore> VegetationChunkSemaphore;
-    TUniquePtr<FairSemaphore> TreeChunkSemaphore;
-    TUniquePtr<FairSemaphore> NpcChunkSemaphore;
+	TUniquePtr<FairSemaphore> VegetationChunkSemaphore;
+	TUniquePtr<FairSemaphore> TreeChunkSemaphore;
+	TUniquePtr<FairSemaphore> NpcChunkSemaphore;
 
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> grassInRangeSpawnPositions;
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> flowersInRangeSpawnPositions;
-    TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> treesInRangeSpawnPositions;
-    TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>*> npcInRangeSpawnPositions;
+	TSet<FIntPoint> grassInRangeSpawnPositions;
+	TSet<FIntPoint> flowersInRangeSpawnPositions;
+	TSet<FIntPoint> treesInRangeSpawnPositions;
+	TSet<FIntPoint> npcInRangeSpawnPositions;
 
-    TUniquePtr<FairSemaphore> MeshDataSemaphore;
+	TUniquePtr<FairSemaphore> MeshDataSemaphore;
 
 	TUniquePtr<FairSemaphore> SurfaceVoxelPointsSemaphore;
-    // 2D Array in a 1D Array representing the height of each surface voxel (not scaled to the chunk position in the world)
-    // FIntPoint represents the tile of the chunk
-    // TArray<int> represents a flatten 2D array of all the heights of each surface voxel in the chunk
-    TMap<FIntPoint, TArray<int>> surfaceVoxelPoints;
-    
-    // Positions to avoid in the pathfinding (not scaled to the chunk position in the world)
-    // FIntPoint represents the tile of the chunk
-    // TArray<FVector2D> represents each 2D coordinate inside the chunk that is occupied (currently just a tree)
-    TMap<FIntPoint, TArray<FVector2D>> surfaceAvoidPoints;
+	// Storing navigation surface data per chunk
+	TMap<FIntPoint, FNavigationSurfaceChunk> NavigationSurfaceChunks;
 
-    // Map used for avoiding overlapping NPCs during pathfinding and movement
-    TMap<FIntPoint, ABasicNPC*> OccupiedVoxels; 
+	// Map used for avoiding overlapping NPCs during pathfinding and movement
+	TMap<FIntPoint, ABasicNPC*> OccupiedVoxels;
 };

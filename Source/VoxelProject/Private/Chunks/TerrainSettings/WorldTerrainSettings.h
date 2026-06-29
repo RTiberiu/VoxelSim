@@ -107,7 +107,8 @@ class UWorldTerrainSettings : public UObject {
 	void printMapElements(FString message); // TODO SHOULD MADE PRIVATE AFTER TESTING
 
 	TArray<FColor> ChunkColorArray = {
-	    FColor(45, 41, 32), FColor(48, 44, 35), FColor(79, 69, 55), FColor(105, 87, 59), FColor(143, 118, 80), FColor(113, 125, 73), FColor(109, 120, 67), FColor(98, 110, 59), FColor(88, 99, 49), FColor(78, 89, 39), FColor(53, 60, 29), FColor(41, 48, 25), FColor(36, 43, 20), FColor(63, 63, 63), FColor(73, 73, 73), FColor(89, 89, 89), FColor(99, 99, 94), FColor(140, 140, 140), FColor(230, 225, 210), FColor(255, 251, 233)};
+	    FColor(45, 41, 32), FColor(48, 44, 35), FColor(79, 69, 55), FColor(105, 87, 59), FColor(143, 118, 80), FColor(113, 125, 73), FColor(109, 120, 67), FColor(98, 110, 59), FColor(88, 99, 49), FColor(78, 89, 39), FColor(53, 60, 29), FColor(41, 48, 25), FColor(36, 43, 20), FColor(63, 63, 63), FColor(73, 73, 73), FColor(89, 89, 89), FColor(99, 99, 94), FColor(140, 140, 140), FColor(230, 225, 210), FColor(255, 251, 233)
+	};
 
 	const int GrassColorStartIndex = 5;
 	const int GrassColorEndIndex = 12;
@@ -115,10 +116,12 @@ class UWorldTerrainSettings : public UObject {
 	const int ColorLayers = 20;
 
 	TArray<FColor> TreeTrunkColorArray = {
-	    FColor(54, 28, 23), FColor(58, 30, 24), FColor(61, 32, 26), FColor(65, 34, 27), FColor(68, 36, 29), FColor(72, 38, 30), FColor(76, 40, 32), FColor(79, 42, 33), FColor(83, 43, 35), FColor(86, 45, 36)};
+	    FColor(54, 28, 23), FColor(58, 30, 24), FColor(61, 32, 26), FColor(65, 34, 27), FColor(68, 36, 29), FColor(72, 38, 30), FColor(76, 40, 32), FColor(79, 42, 33), FColor(83, 43, 35), FColor(86, 45, 36)
+	};
 
 	TArray<FColor> TreeCrownColorArray = {
-	    FColor(30, 72, 65), FColor(22, 80, 77), FColor(15, 81, 87), FColor(20, 89, 103), FColor(25, 95, 118), FColor(43, 102, 136), FColor(65, 107, 149), FColor(80, 100, 165), FColor(106, 104, 177), FColor(135, 101, 174), FColor(151, 103, 173), FColor(167, 103, 173)};
+	    FColor(30, 72, 65), FColor(22, 80, 77), FColor(15, 81, 87), FColor(20, 89, 103), FColor(25, 95, 118), FColor(43, 102, 136), FColor(65, 107, 149), FColor(80, 100, 165), FColor(106, 104, 177), FColor(135, 101, 174), FColor(151, 103, 173), FColor(167, 103, 173)
+	};
 
 	// Vegetation settings
 	const int VegetationCollisionDistance{chunkSize * UnrealScale};
@@ -161,7 +164,8 @@ class UWorldTerrainSettings : public UObject {
 	const uint8_t FlowerIntsPerHeight{static_cast<uint8_t>(FlowerHeight / FlowerSize)};
 
 	TArray<FColor> FlowerStemColorArray = {
-	    FColor(98, 117, 67), FColor(84, 108, 61), FColor(71, 99, 54), FColor(58, 90, 48), FColor(46, 80, 42)};
+	    FColor(98, 117, 67), FColor(84, 108, 61), FColor(71, 99, 54), FColor(58, 90, 48), FColor(46, 80, 42)
+	};
 
 	TArray<FColor> FlowerPetalColorArray = {
 	    FColor(74, 86, 125), FColor(74, 80, 130), FColor(77, 75, 134),
@@ -170,7 +174,8 @@ class UWorldTerrainSettings : public UObject {
 	    FColor(162, 80, 165), FColor(170, 80, 161), FColor(175, 80, 153),
 	    FColor(178, 83, 143), FColor(180, 85, 133), FColor(183, 87, 122),
 	    FColor(186, 90, 112), FColor(188, 92, 102), FColor(191, 96, 95),
-	    FColor(194, 112, 100)};
+	    FColor(194, 112, 100)
+	};
 
 	// Grass settings
 	int GrassCount{0};
