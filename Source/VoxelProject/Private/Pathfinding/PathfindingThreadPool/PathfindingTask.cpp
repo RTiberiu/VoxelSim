@@ -1,45 +1,49 @@
 #include "PathfindingTask.h"
-#include "..\..\Chunks\TerrainSettings\WorldTerrainSettings.h"
-#include "Misc/DateTime.h"
 #include "..\..\Chunks\ChunkData\ChunkLocationData.h"
-
+#include "..\..\Chunks\TerrainSettings\WorldTerrainSettings.h"
+#include "..\..\NPC\BasicNPC\BasicNPC.h"
+#include "Misc/DateTime.h"
 
 FPathfindingTask::FPathfindingTask(
-	const FVector& InStartLocation,
-	const FVector& InEndLocation,
-	ABasicNPC* InNPCRef,
-	UWorldTerrainSettings* InWorldTerrainSettingsRef,
-	UChunkLocationData* InChunkLocationDataRef
-) : StartLocation(InStartLocation), EndLocation(InEndLocation), NPCRef(InNPCRef), WorldTerrainSettingsRef(InWorldTerrainSettingsRef), ChunkLocationDataRef(InChunkLocationDataRef), isSearching(false) {
-
+    const FVector& InStartLocation,
+    const FVector& InEndLocation,
+    ABasicNPC* InNPCRef,
+    UWorldTerrainSettings* InWorldTerrainSettingsRef,
+    UChunkLocationData* InChunkLocationDataRef
+)
+    : WorldTerrainSettingsRef(InWorldTerrainSettingsRef),
+      ChunkLocationDataRef(InChunkLocationDataRef),
+      NPCRef(InNPCRef),
+      StartLocation(InStartLocation),
+      EndLocation(InEndLocation),
+      bIsSearching(false) {
 }
 
 FPathfindingTask::~FPathfindingTask() {
-    WorldTerrainSettingsRef = nullptr;
-    ChunkLocationDataRef = nullptr;
-	NPCRef = nullptr;
-	searchProblem = nullptr;
 }
 
 void FPathfindingTask::DoThreadedWork() {
 	AdjustLocationsToUnrealScaling();
 
-	Path* path = GetPathToEndLocation();
+	TUniquePtr<Path> PathToTarget = GetPathToEndLocation();
 
-	// Only adjust if path is not a nullptr
-	if (path) {
-		AdjustPathWithActualVoxelHeights(path);
+	if (PathToTarget.IsValid()) {
+		AdjustPathWithActualVoxelHeights(*PathToTarget);
 	}
 
-	// Notify the NPC that the path is ready
-	NPCRef->SetPathToTargetAndNotify(path);
+	DispatchPathToGameThread(MoveTemp(PathToTarget));
+	delete this;
 }
 
 void FPathfindingTask::Abandon() {
-	// Notify the search problem to stop searching
-	if (isSearching) {
-		searchProblem->StopSearching();
+	if (bIsSearching) {
+		FScopeLock SearchProblemLock(&SearchProblemCriticalSection);
+		if (SearchProblem.IsValid()) {
+			SearchProblem->StopSearching();
+		}
 	}
+
+	delete this;
 }
 
 void FPathfindingTask::SetWorldTerrainSettings(UWorldTerrainSettings* InWorldTerrainSettings) {
@@ -52,59 +56,89 @@ void FPathfindingTask::SetChunkLocationData(UChunkLocationData* InChunkLocationD
 
 // Makes each unit in the start and end locaiton be the equivalent of a voxel size
 void FPathfindingTask::AdjustLocationsToUnrealScaling() {
-	StartLocation = FVector(FMath::FloorToDouble(StartLocation.X / WTSR->UnrealScale), FMath::FloorToDouble(StartLocation.Y / WTSR->UnrealScale), 0);
-	EndLocation = FVector(FMath::FloorToDouble(EndLocation.X / WTSR->UnrealScale), FMath::FloorToDouble(EndLocation.Y / WTSR->UnrealScale), 0);
+	UWorldTerrainSettings* WorldTerrainSettings = WorldTerrainSettingsRef.Get();
+	if (!WorldTerrainSettings) {
+		return;
+	}
+
+	StartLocation = FVector(FMath::FloorToDouble(StartLocation.X / WorldTerrainSettings->UnrealScale), FMath::FloorToDouble(StartLocation.Y / WorldTerrainSettings->UnrealScale), 0);
+	EndLocation = FVector(FMath::FloorToDouble(EndLocation.X / WorldTerrainSettings->UnrealScale), FMath::FloorToDouble(EndLocation.Y / WorldTerrainSettings->UnrealScale), 0);
 }
 
-Path* FPathfindingTask::GetPathToEndLocation() {
-    VoxelSearchState startPosition = VoxelSearchState(StartLocation, CLDR);
-    VoxelSearchState endPosition = VoxelSearchState(EndLocation, CLDR);
+TUniquePtr<Path> FPathfindingTask::GetPathToEndLocation() {
+	UChunkLocationData* ChunkLocationData = ChunkLocationDataRef.Get();
+	if (!ChunkLocationData) {
+		return nullptr;
+	}
 
-    searchProblem = new VoxelSearchProblem(startPosition, endPosition);
+	VoxelSearchState startPosition = VoxelSearchState(StartLocation, ChunkLocationData);
+	VoxelSearchState endPosition = VoxelSearchState(EndLocation, ChunkLocationData);
 
-	isSearching = true;
-    Path* pathToGoal = searchProblem->search();
-	isSearching = false;
+	{
+		FScopeLock SearchProblemLock(&SearchProblemCriticalSection);
+		SearchProblem = MakeUnique<VoxelSearchProblem>(startPosition, endPosition);
+	}
 
-	// Cleanup 
-	delete searchProblem;
-	searchProblem = nullptr;
+	bIsSearching.AtomicSet(true);
+	TUniquePtr<Path> PathToGoal(SearchProblem->search());
+	bIsSearching.AtomicSet(false);
 
-    return pathToGoal;
+	{
+		FScopeLock SearchProblemLock(&SearchProblemCriticalSection);
+		SearchProblem.Reset();
+	}
+
+	return PathToGoal;
 }
 
-void FPathfindingTask::AdjustPathWithActualVoxelHeights(Path* path) {
-	// Get actual surface voxel heights
-	TMap<FIntPoint, TArray<int>> surfaceVoxelPoints = CLDR->GetSurfaceVoxelPoints();
+void FPathfindingTask::AdjustPathWithActualVoxelHeights(Path& PathToAdjust) {
+	UChunkLocationData* ChunkLocationData = ChunkLocationDataRef.Get();
+	UWorldTerrainSettings* WorldTerrainSettings = WorldTerrainSettingsRef.Get();
+	if (!ChunkLocationData || !WorldTerrainSettings) {
+		return;
+	}
+
+	TMap<FIntPoint, TArray<int>> surfaceVoxelPoints = ChunkLocationData->GetSurfaceVoxelPoints();
 
 	// Update each ActionStatePair in the path
-	for (ActionStatePair* pair : path->path) {
+	for (ActionStatePair* pair : PathToAdjust.path) {
 		FVector& location = pair->state->getPosition();
 
+		FIntPoint chunkPosition(FMath::FloorToInt(location.X / WorldTerrainSettings->chunkSize), FMath::FloorToInt(location.Y / WorldTerrainSettings->chunkSize));
 
-		FIntPoint chunkPosition(FMath::FloorToInt(location.X / WTSR->chunkSize), FMath::FloorToInt(location.Y / WTSR->chunkSize));
-		
 		if (surfaceVoxelPoints.Contains(chunkPosition)) {
 			const TArray<int>& heights = surfaceVoxelPoints[chunkPosition];
 
-			const int modX = FMath::Max(((static_cast<int>(location.X) % WTSR->chunkSize) + WTSR->chunkSize) % WTSR->chunkSize - 1, 0);
-			const int modY = FMath::Max(((static_cast<int>(location.Y) % WTSR->chunkSize) + WTSR->chunkSize) % WTSR->chunkSize - 1, 0);
+			const int modX = FMath::Max(((static_cast<int>(location.X) % WorldTerrainSettings->chunkSize) + WorldTerrainSettings->chunkSize) % WorldTerrainSettings->chunkSize - 1, 0);
+			const int modY = FMath::Max(((static_cast<int>(location.Y) % WorldTerrainSettings->chunkSize) + WorldTerrainSettings->chunkSize) % WorldTerrainSettings->chunkSize - 1, 0);
 
-			const int index = modX * WTSR->chunkSize + modY;
+			const int index = modX * WorldTerrainSettings->chunkSize + modY;
 
 			if (heights.IsValidIndex(index)) {
-				location.Z = heights[index] * WTSR->UnrealScale;
-				location.X = location.X * WTSR->UnrealScale + WTSR->HalfUnrealScale;
-				location.Y = location.Y * WTSR->UnrealScale + WTSR->HalfUnrealScale;
+				location.Z = heights[index] * WorldTerrainSettings->UnrealScale;
+				location.X = location.X * WorldTerrainSettings->UnrealScale + WorldTerrainSettings->HalfUnrealScale;
+				location.Y = location.Y * WorldTerrainSettings->UnrealScale + WorldTerrainSettings->HalfUnrealScale;
 			}
 		}
 	}
 }
 
+void FPathfindingTask::DispatchPathToGameThread(TUniquePtr<Path> PathToTarget) {
+	TWeakObjectPtr<ABasicNPC> WeakNPC = NPCRef;
+
+	AsyncTask(ENamedThreads::GameThread, [WeakNPC, PathToTarget = MoveTemp(PathToTarget)]() mutable {
+		if (!WeakNPC.IsValid()) {
+			return;
+		}
+
+		WeakNPC->SetPathToTargetAndNotify(MoveTemp(PathToTarget));
+	});
+}
+
 // Method used for testing. It prints all the heights in the current chunk, to better visualize their positions
 void FPathfindingTask::PrintHeights(const TArray<int>& heights) {
 	FString output;
-	output += TEXT("CHUNK: \n");	
+	output += TEXT("CHUNK: \n");
 
 	for (int i = 0; i < heights.Num(); ++i) {
 		output += FString::FromInt(heights[i]) + TEXT("\t");

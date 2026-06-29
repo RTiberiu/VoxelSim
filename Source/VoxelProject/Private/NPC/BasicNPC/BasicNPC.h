@@ -1,4 +1,4 @@
-# pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -6,17 +6,18 @@
 #include <GameFramework/FloatingPawnMovement.h>
 #include <Runtime/AIModule/Classes/AIController.h>
 
-#include "..\SettingsNPC\AnimationSettingsNPC.h"
 #include "..\SettingsNPC\ActionStructures.h"
-//#include "DecisionSystemNPC.h"
+#include "..\SettingsNPC\AnimationSettingsNPC.h"
+// #include "DecisionSystemNPC.h"
 
 #include "..\StatsNPC\StatsVoxelsMeshNPC.h"
 
-#include "..\..\Utils\CustomMesh\CustomProceduralMeshComponent.h"
-#include <variant>
-#include "..\..\Pathfinding\SearchLibrary\Path.h"
 #include "..\..\Pathfinding\PathfindingThreadPool\PathfindingThreadManager.h"
+#include "..\..\Pathfinding\SearchLibrary\Path.h"
+#include "..\..\Utils\CustomMesh\CustomProceduralMeshComponent.h"
 #include "BasicNPC.generated.h"
+#include "Templates/UniquePtr.h"
+#include <variant>
 
 class UDecisionSystemNPC;
 class PathfindingThreadManager;
@@ -29,32 +30,32 @@ enum VisionList {
 	FoodSource
 };
 
-enum class NotificationType : uint8{
-	Default		= 1,
-	Notifying	= 2,
-	Accepted	= 3,
-	Discarded	= 4
+enum class NotificationType : uint8 {
+	Default = 1,
+	Notifying = 2,
+	Accepted = 3,
+	Discarded = 4
 };
 
 UCLASS()
 class ABasicNPC : public APawn {
 	GENERATED_BODY()
 
-public:
+  public:
 	ABasicNPC();
-	~ABasicNPC(); 
+	~ABasicNPC();
 
 	void SetNPCWorldLocation(FIntPoint InNPCWorldLocation);
 
 	void SetWorldTerrainSettings(UWorldTerrainSettings* InWorldTerrainSettings);
 	void SetPathfindingManager(PathfindingThreadManager* InPathfindingManager);
 	void SetChunkLocationData(UChunkLocationData* InChunkLocationData);
-	void SetAnimationSettingsNPC(UAnimationSettingsNPC* InAnimationSettingsNPCRef); 
+	void SetAnimationSettingsNPC(UAnimationSettingsNPC* InAnimationSettingsNPCRef);
 	void SetStatsVoxelsMeshNPC(UStatsVoxelsMeshNPC* InStatsVoxelsMeshNPC);
 
 	void InitializeBrain(const AnimalType& animalType);
 
-	void SetPathToTargetAndNotify(Path* InPathToTarget);
+	void SetPathToTargetAndNotify(TUniquePtr<Path> InPathToTarget);
 
 	const AnimalType& GetType();
 	const AnimalType& GetNpcFoodRelationships();
@@ -69,9 +70,9 @@ public:
 	const FIntPoint& GetNpcWorldLocation();
 
 	std::variant<ABasicNPC*, UCustomProceduralMeshComponent*> GetClosestInVisionList(
-		VisionList list, 
-		bool ChooseOptimalAction, 
-		const int& IncrementTargetInVisionList
+	    VisionList list,
+	    bool ChooseOptimalAction,
+	    const int& IncrementTargetInVisionList
 	);
 
 	FVector& GetCurrentLocation();
@@ -81,7 +82,7 @@ public:
 	bool IsDead();
 	void TriggerFoodRewardOnKill();
 
-private:
+  private:
 	UWorldTerrainSettings* WorldTerrainSettingsRef;
 	UWorldTerrainSettings*& WTSR = WorldTerrainSettingsRef;
 
@@ -117,7 +118,7 @@ private:
 	void InitializeVisionCollisionSphere(const float& radius);
 
 	void RequestPathToPlayer();
-	Path* pathToTarget;
+	TUniquePtr<Path> pathToTarget;
 	bool pathIsReady;
 
 	void ConsumePathAndMoveToLocation(const float& DeltaSeconds);
@@ -192,7 +193,7 @@ private:
 	AnimationType lookingDirection;
 
 	void RemoveFoodTargetFromMapAndDestroy();
-	
+
 	// Methods to update the NPC attributes
 	void UpdateFoodAttributes(const uint8& hungerRecovered, bool ateBasicFood);
 	bool ForceRestWhenStaminaIsZero(const float& DeltaSeconds);
@@ -200,7 +201,7 @@ private:
 	bool UpdateStamina(const float& DeltaSeconds, const uint8_t& Threshold);
 
 	// Trigger a death animation and destroy the NPC
-    void TriggerNpcDeath(uint8_t attackerEatingSpeed = 10);
+	void TriggerNpcDeath(uint8_t attackerEatingSpeed = 10);
 	void WaitForDespawnThresholdAndDestroy(const float& DeltaSeconds);
 	bool isDeathTriggered;
 	float DespawningCounter = 0.0f;
@@ -208,13 +209,13 @@ private:
 
 	bool waitForNextPositionCheck;
 	bool checkNextPosition;
-	float OccupiedDelayTimer = 0.0f; // Accumulates time when target location is occupied by another NPC
+	float OccupiedDelayTimer = 0.0f;           // Accumulates time when target location is occupied by another NPC
 	const float OccupiedDelayThreshold = 0.5f; // Delay in seconds before trying again to move to the next location
-	float FrustrationCounter = 0.0f; // Accumulates time when the NPC is not able to reach the target location
-	const float FrustrationThreshold = 1.0f; // Time in seconds before the NPC gives up on moving to the target location
-	bool frutrationTriggered = false; // Flag to check if the frustration threshold was reached
-	int sameActionFrustrationCounter = 0; // Depending on this, the N-th target in the vision list will be selected
-	UObject* LastActionTarget = nullptr; // Used to compare if the new action target is the same as the previous one
+	float FrustrationCounter = 0.0f;           // Accumulates time when the NPC is not able to reach the target location
+	const float FrustrationThreshold = 1.0f;   // Time in seconds before the NPC gives up on moving to the target location
+	bool frutrationTriggered = false;          // Flag to check if the frustration threshold was reached
+	int sameActionFrustrationCounter = 0;      // Depending on this, the N-th target in the vision list will be selected
+	UObject* LastActionTarget = nullptr;       // Used to compare if the new action target is the same as the previous one
 
 	// TESTING TICK CALLS
 	float DelayBeforeFirstPathRequest;
@@ -225,13 +226,10 @@ private:
 
 	// Overlap event functions
 	UFUNCTION()
-	void OnOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep,
-		const FHitResult& SweepResult);
+	void OnOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 	UFUNCTION()
-	void OnOverlapEnd(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+	void OnOverlapEnd(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
 	void AddOverlappingNpcToVisionList(ABasicNPC* OverlappingNpc);
 	void RemoveOverlappingNpcFromVisionList(ABasicNPC* OverlappingNpc);
@@ -243,13 +241,14 @@ private:
 	ABasicNPC* GetClosestInList(const TArray<ABasicNPC*>& list, bool ChooseOptimalAction, const int& IncrementTargetInVisionList);
 	UCustomProceduralMeshComponent* GetClosestInList(const TArray<UCustomProceduralMeshComponent*>& list, bool ChooseOptimalAction, const int& IncrementTargetInVisionList);
 
-    // Avoid repeating the same compare the closest object logic  
-	template<typename T>
+	// Avoid repeating the same compare the closest object logic
+	template <typename T>
 	T* GetClosestInListGeneric(
-		const TArray<T*>& list,
-		TFunctionRef<FVector(T*)> GetLocation,
-		bool ChooseOptimalAction,
-		const int32& IncrementTargetInVisionList) const {
+	    const TArray<T*>& list,
+	    TFunctionRef<FVector(T*)> GetLocation,
+	    bool ChooseOptimalAction,
+	    const int32& IncrementTargetInVisionList
+	) const {
 		if (list.Num() == 0) {
 			return nullptr;
 		}
@@ -267,7 +266,7 @@ private:
 		// Sort by distance ascending
 		distanceArray.Sort([](auto& A, auto& B) {
 			return A.Key < B.Key;
-			});
+		});
 
 		if (ChooseOptimalAction) {
 			// Return nullptr if the requested N-th target doesn't exist
@@ -289,7 +288,7 @@ private:
 		}
 	}
 
-	// Store objects in the NPC's perceptation sphere 
+	// Store objects in the NPC's perceptation sphere
 	TArray<ABasicNPC*> ThreatsInRange;
 	TArray<ABasicNPC*> AlliesInRange;
 	TArray<ABasicNPC*> FoodNpcInRange;
@@ -300,7 +299,7 @@ private:
 
 	// Handles the notification, based on the action that triggered the notification
 	void ReceiveNotificationOfEvent(const NpcAction& ActionTriggered);
-	bool InterruptAction = false; // Used to trigger an interrupt when notified
+	bool InterruptAction = false;      // Used to trigger an interrupt when notified
 	bool ShowNotificationStat = false; // Used to show the notification stat
 	float ShowNotificationStatCounter = 0.0f;
 	float ShowNotificationStatThreshold = 1.5f; // For how long to show the notification
@@ -310,12 +309,9 @@ private:
 
 	void TriggerPathfindingTask();
 
-protected:
+  protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 	virtual void Tick(float DeltaSeconds) override;
-
-
-
 };

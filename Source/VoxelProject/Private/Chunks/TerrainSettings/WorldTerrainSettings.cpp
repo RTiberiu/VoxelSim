@@ -1,44 +1,28 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "WorldTerrainSettings.h"
-#include "..\..\Noise\PerlinNoiseSettings.h"
 #include "..\..\Noise\NoiseLibrary\FastNoiseLite.h"
+#include "..\..\Noise\PerlinNoiseSettings.h"
 #include "..\..\Utils\Semaphore\FairSemaphore.h"
 
-
-UWorldTerrainSettings::UWorldTerrainSettings() :
-	UpdateChunkSemaphore(new FairSemaphore(1)),
-	PlayerPositionSemaphore(new FairSemaphore(1)),
-	ChunkMapSemaphore(new FairSemaphore(1)),
-	TreeMapSemaphore(new FairSemaphore(1)),
-	GrassMapSemaphore(new FairSemaphore(1)),
-	FlowerMapSemaphore(new FairSemaphore(1)),
-	NpcMapSemaphore(new FairSemaphore(1)),
-	DrawDistanceSemaphore(new FairSemaphore(1)),
-	AddCollisionTreesSemaphore(new FairSemaphore(1)),
-	RemoveCollisionTreesSemaphore(new FairSemaphore(1)),
-	AddCollisionChunksSemaphore(new FairSemaphore(1)),
-	RemoveCollisionChunksSemaphore(new FairSemaphore(1)) {
-	// Reserve memory for double the draw distance for X and Z 
+UWorldTerrainSettings::UWorldTerrainSettings()
+    : UpdateChunkSemaphore(new FairSemaphore(1)),
+      PlayerPositionSemaphore(new FairSemaphore(1)),
+      ChunkMapSemaphore(new FairSemaphore(1)),
+      TreeMapSemaphore(new FairSemaphore(1)),
+      GrassMapSemaphore(new FairSemaphore(1)),
+      FlowerMapSemaphore(new FairSemaphore(1)),
+      NpcMapSemaphore(new FairSemaphore(1)),
+      DrawDistanceSemaphore(new FairSemaphore(1)),
+      AddCollisionTreesSemaphore(new FairSemaphore(1)),
+      RemoveCollisionTreesSemaphore(new FairSemaphore(1)),
+      AddCollisionChunksSemaphore(new FairSemaphore(1)),
+      RemoveCollisionChunksSemaphore(new FairSemaphore(1)) {
+	// Reserve memory for double the draw distance for X and Z
 	SpawnedChunksMap.Reserve(DrawDistance * DrawDistance * 2);
 }
 
 UWorldTerrainSettings::~UWorldTerrainSettings() {
-	// Clean up semaphores
-	delete UpdateChunkSemaphore;
-	delete PlayerPositionSemaphore;
-	delete ChunkMapSemaphore;
-	delete TreeMapSemaphore;
-	delete GrassMapSemaphore;
-	delete FlowerMapSemaphore;
-	delete NpcMapSemaphore;
-	delete DrawDistanceSemaphore;
-
-	delete AddCollisionTreesSemaphore;
-	delete RemoveCollisionTreesSemaphore;
-	delete AddCollisionChunksSemaphore;
-	delete RemoveCollisionChunksSemaphore;
-
 	if (PerlinNoiseSettingsRef) {
 		PerlinNoiseSettingsRef = nullptr;
 	}
@@ -76,7 +60,7 @@ AActor* UWorldTerrainSettings::GetNextChunkFromMap() {
 			keyToRemove = Elem.Key;
 			break;
 		}
-		// Remove the retrived chunk from the map 
+		// Remove the retrived chunk from the map
 		SpawnedChunksMap.Remove(keyToRemove);
 	}
 	ChunkMapSemaphore->Release();
@@ -123,10 +107,10 @@ const TMap<FIntPoint, AActor*>& UWorldTerrainSettings::GetSpawnedChunksMap() con
 }
 
 /*
-* Get read-only items of SpawnedChunksMap and iterate to see if chunks are outside or inside of
-* the collision threshold. Chunks inside the threshold will have their meshes regenerated with
-* collision and chunks outside of it will get their collision disabled through a mesh update.
-*/
+ * Get read-only items of SpawnedChunksMap and iterate to see if chunks are outside or inside of
+ * the collision threshold. Chunks inside the threshold will have their meshes regenerated with
+ * collision and chunks outside of it will get their collision disabled through a mesh update.
+ */
 void UWorldTerrainSettings::UpdateChunksCollision(FVector& PlayerPosition) {
 	ChunkMapSemaphore->Acquire();
 	for (const TPair<FIntPoint, AActor*>& ChunkPair : SpawnedChunksMap) {
@@ -142,9 +126,9 @@ void UWorldTerrainSettings::UpdateChunksCollision(FVector& PlayerPosition) {
 			float maxY = PlayerPosition.Y + CollisionDistance;
 
 			// Check if the player is within the collision boundaries
-			bool withinCollisionDistance = 
-				(ChunkPosition.X >= minX && ChunkPosition.X <= maxX) &&
-				(ChunkPosition.Y >= minY && ChunkPosition.Y <= maxY);
+			bool withinCollisionDistance =
+			    (ChunkPosition.X >= minX && ChunkPosition.X <= maxX) &&
+			    (ChunkPosition.Y >= minY && ChunkPosition.Y <= maxY);
 
 			// Update collision state based on proximity
 			if (withinCollisionDistance) {
@@ -152,10 +136,8 @@ void UWorldTerrainSettings::UpdateChunksCollision(FVector& PlayerPosition) {
 					AddCollisionChunksSemaphore->Acquire();
 					AddCollisionChunks.Add(ChunkActor);
 					AddCollisionChunksSemaphore->Release();
-
 				}
-			}
-			else {
+			} else {
 				if (ChunkActor->HasCollision()) {
 					RemoveCollisionChunksSemaphore->Acquire();
 					RemoveCollisionChunks.Add(ChunkActor);
@@ -188,7 +170,7 @@ void UWorldTerrainSettings::UpdateTreeCollisions(FVector& PlayerPosition) {
 
 				// Check if the player is within the collision boundaries
 				bool withinCollisionDistance = (ChunkPosition.X >= minX && ChunkPosition.X <= maxX) &&
-					(ChunkPosition.Y >= minY && ChunkPosition.Y <= maxY);
+				                               (ChunkPosition.Y >= minY && ChunkPosition.Y <= maxY);
 
 				// Update collision state based on proximity
 				if (withinCollisionDistance) {
@@ -197,8 +179,7 @@ void UWorldTerrainSettings::UpdateTreeCollisions(FVector& PlayerPosition) {
 						AddCollisionTrees.Add(tree);
 						AddCollisionTreesSemaphore->Release();
 					}
-				}
-				else {
+				} else {
 					if (tree->HasCollision()) {
 						RemoveCollisionTreesSemaphore->Acquire();
 						RemoveCollisionTrees.Add(tree);
@@ -208,7 +189,6 @@ void UWorldTerrainSettings::UpdateTreeCollisions(FVector& PlayerPosition) {
 			}
 		}
 	}
-
 }
 
 bool UWorldTerrainSettings::isActorPresentInMap(AActor* actor) {
@@ -221,7 +201,7 @@ bool UWorldTerrainSettings::isActorPresentInMap(AActor* actor) {
 }
 
 void UWorldTerrainSettings::printMapElements(FString message) {
-	int testCounter{ 0 };
+	int testCounter{0};
 	FString keysString = message + " Map count: " + FString::FromInt(SpawnedChunksMap.Num()) + ": \n";
 
 	for (const TPair<FIntPoint, AActor*>& Pair : SpawnedChunksMap) {
@@ -270,7 +250,6 @@ FVoxelObjectMeshData* UWorldTerrainSettings::GetRandomTreeMeshData() {
 
 FVoxelObjectMeshData* UWorldTerrainSettings::GetRandomGrassMeshData() {
 	return &GrassMeshData[FMath::RandRange(0, GrassMeshData.Num() - 1)];
-
 }
 
 FVoxelObjectMeshData* UWorldTerrainSettings::GetRandomFlowerMeshData() {
@@ -285,7 +264,7 @@ void UWorldTerrainSettings::AddSpawnedTrees(const FIntPoint& TreeWorldCoordinate
 		SpawnedTreesMap[TreeWorldCoordinates].Add(TreeActor);
 	} else {
 		// If not, create a new array with the new tree
-		SpawnedTreesMap.Add(TreeWorldCoordinates, TArray<ATree*>({ TreeActor }));
+		SpawnedTreesMap.Add(TreeWorldCoordinates, TArray<ATree*>({TreeActor}));
 	}
 
 	TreeMapSemaphore->Release();
@@ -299,7 +278,7 @@ void UWorldTerrainSettings::AddSpawnedGrass(const FIntPoint& GrassWorldCoordinat
 		SpawnedGrassMap[GrassWorldCoordinates].Add(GrassActor);
 	} else {
 		// If not, create a new array with the new grass
-		SpawnedGrassMap.Add(GrassWorldCoordinates, TArray<UCustomProceduralMeshComponent*>({ GrassActor }));
+		SpawnedGrassMap.Add(GrassWorldCoordinates, TArray<UCustomProceduralMeshComponent*>({GrassActor}));
 	}
 
 	GrassMapSemaphore->Release();
@@ -313,7 +292,7 @@ void UWorldTerrainSettings::AddSpawnedFlower(const FIntPoint& FlowerWorldCoordin
 		SpawnedFlowerMap[FlowerWorldCoordinates].Add(FlowerActor);
 	} else {
 		// If not, create a new array with the new flower
-		SpawnedFlowerMap.Add(FlowerWorldCoordinates, TArray<UCustomProceduralMeshComponent*>({ FlowerActor }));
+		SpawnedFlowerMap.Add(FlowerWorldCoordinates, TArray<UCustomProceduralMeshComponent*>({FlowerActor}));
 	}
 
 	FlowerMapSemaphore->Release();
@@ -327,7 +306,7 @@ void UWorldTerrainSettings::AddSpawnedNpc(const FIntPoint& npcWorldCoordinates, 
 		SpawnedNpcMap[npcWorldCoordinates].Add(npcActor);
 	} else {
 		// If not, create a new array with the new NPC
-		SpawnedNpcMap.Add(npcWorldCoordinates, TArray<ABasicNPC*>({ npcActor }));
+		SpawnedNpcMap.Add(npcWorldCoordinates, TArray<ABasicNPC*>({npcActor}));
 	}
 
 	NpcMapSemaphore->Release();
@@ -338,7 +317,7 @@ const TMap<FIntPoint, TArray<ATree*>>& UWorldTerrainSettings::GetSpawnedTreesMap
 }
 
 TArray<ATree*> UWorldTerrainSettings::GetAndRemoveTreeFromMap(const FIntPoint& TreeWorldCoordinates) {
-	TArray<ATree*> RemovedTrees;  // Array to hold the remaining trees at the location
+	TArray<ATree*> RemovedTrees; // Array to hold the remaining trees at the location
 
 	TreeMapSemaphore->Acquire();
 
@@ -347,33 +326,33 @@ TArray<ATree*> UWorldTerrainSettings::GetAndRemoveTreeFromMap(const FIntPoint& T
 		// Get and remove the array of trees at this location if it's not empty
 		if (!SpawnedTreesMap[TreeWorldCoordinates].IsEmpty()) {
 			RemovedTrees = SpawnedTreesMap.FindAndRemoveChecked(TreeWorldCoordinates);
-			//RemovedTrees = *SpawnedTreesMap.Find(TreeWorldCoordinates);
+			// RemovedTrees = *SpawnedTreesMap.Find(TreeWorldCoordinates);
 		}
 	}
 
 	TreeMapSemaphore->Release();
 	return RemovedTrees;
 }
-TArray<UCustomProceduralMeshComponent*> UWorldTerrainSettings::GetAndRemoveGrassFromMap(const FIntPoint& GrassWorldCoordinates) {  
-	TArray<UCustomProceduralMeshComponent*> RemovedGrass;  // Array to hold the remaining grass at the location  
+TArray<UCustomProceduralMeshComponent*> UWorldTerrainSettings::GetAndRemoveGrassFromMap(const FIntPoint& GrassWorldCoordinates) {
+	TArray<UCustomProceduralMeshComponent*> RemovedGrass; // Array to hold the remaining grass at the location
 
-	GrassMapSemaphore->Acquire();  
+	GrassMapSemaphore->Acquire();
 
-	// Check if the map contains the coordinates  
-	if (SpawnedGrassMap.Contains(GrassWorldCoordinates)) {  
-		// Get and remove the array of grass at this location if it's not empty  
-		if (!SpawnedGrassMap[GrassWorldCoordinates].IsEmpty()) {  
-			RemovedGrass = SpawnedGrassMap.FindAndRemoveChecked(GrassWorldCoordinates);  
-			SpawnedGrassMap.Remove(GrassWorldCoordinates);  
-		} 
-	}  
+	// Check if the map contains the coordinates
+	if (SpawnedGrassMap.Contains(GrassWorldCoordinates)) {
+		// Get and remove the array of grass at this location if it's not empty
+		if (!SpawnedGrassMap[GrassWorldCoordinates].IsEmpty()) {
+			RemovedGrass = SpawnedGrassMap.FindAndRemoveChecked(GrassWorldCoordinates);
+			SpawnedGrassMap.Remove(GrassWorldCoordinates);
+		}
+	}
 
-	GrassMapSemaphore->Release();  
+	GrassMapSemaphore->Release();
 	return RemovedGrass;
 }
 
 TArray<UCustomProceduralMeshComponent*> UWorldTerrainSettings::GetAndRemoveFlowerFromMap(const FIntPoint& FlowerWorldCoordinates) {
-	TArray<UCustomProceduralMeshComponent*> RemovedFlower;  // Array to hold the remaining flower at the location
+	TArray<UCustomProceduralMeshComponent*> RemovedFlower; // Array to hold the remaining flower at the location
 
 	FlowerMapSemaphore->Acquire();
 
@@ -391,7 +370,7 @@ TArray<UCustomProceduralMeshComponent*> UWorldTerrainSettings::GetAndRemoveFlowe
 }
 
 TArray<ABasicNPC*> UWorldTerrainSettings::GetAndRemoveNpcFromMap(const FIntPoint& npcWorldCoordinates) {
-	TArray<ABasicNPC*> RemovedNpcs;  // Array to hold the remaining NPCs at the location
+	TArray<ABasicNPC*> RemovedNpcs; // Array to hold the remaining NPCs at the location
 
 	NpcMapSemaphore->Acquire();
 
@@ -419,42 +398,42 @@ void UWorldTerrainSettings::RemoveTreeFromMap(const FIntPoint& TreeWorldCoordina
 }
 
 void UWorldTerrainSettings::CheckAndReturnGrassNotInRange(TArray<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove) {
-   GrassMapSemaphore->Acquire();  
+	GrassMapSemaphore->Acquire();
 
-   // Iterate over the keys of SpawnedGrassMap  
-   for (TMap<FIntPoint, TArray<UCustomProceduralMeshComponent*>>::TIterator GrassMapIterator = SpawnedGrassMap.CreateIterator(); GrassMapIterator; ++GrassMapIterator) {  
-      const FIntPoint& Key = GrassMapIterator.Key();  
+	// Iterate over the keys of SpawnedGrassMap
+	for (TMap<FIntPoint, TArray<UCustomProceduralMeshComponent*>>::TIterator GrassMapIterator = SpawnedGrassMap.CreateIterator(); GrassMapIterator; ++GrassMapIterator) {
+		const FIntPoint& Key = GrassMapIterator.Key();
 
-      // Check if the key is not in the provided coordinates  
-      if (!coordinates.Contains(Key)) {  
-		  // Add each grass component to the queue  
-		  for (UCustomProceduralMeshComponent* GrassActor : GrassMapIterator.Value()) {
-			  GrassActorsToRemove->Enqueue(GrassActor);
-		  }
+		// Check if the key is not in the provided coordinates
+		if (!coordinates.Contains(Key)) {
+			// Add each grass component to the queue
+			for (UCustomProceduralMeshComponent* GrassActor : GrassMapIterator.Value()) {
+				GrassActorsToRemove->Enqueue(GrassActor);
+			}
 
-          // Remove the key from the map  
-          GrassMapIterator.RemoveCurrent();  
-      }  
-   }
+			// Remove the key from the map
+			GrassMapIterator.RemoveCurrent();
+		}
+	}
 
-   GrassMapSemaphore->Release();  
+	GrassMapSemaphore->Release();
 }
 
 void UWorldTerrainSettings::CheckAndReturnFlowersNotInRange(TArray<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove) {
 	FlowerMapSemaphore->Acquire();
 
-	// Iterate over the keys of SpawnedFlowerMap  
+	// Iterate over the keys of SpawnedFlowerMap
 	for (TMap<FIntPoint, TArray<UCustomProceduralMeshComponent*>>::TIterator FlowerMapIterator = SpawnedFlowerMap.CreateIterator(); FlowerMapIterator; ++FlowerMapIterator) {
 		const FIntPoint& Key = FlowerMapIterator.Key();
 
-		// Check if the key is not in the provided coordinates  
+		// Check if the key is not in the provided coordinates
 		if (!coordinates.Contains(Key)) {
-			// Add each flower component to the queue  
+			// Add each flower component to the queue
 			for (UCustomProceduralMeshComponent* FlowerActor : FlowerMapIterator.Value()) {
 				FlowerActorsToRemove->Enqueue(FlowerActor);
 			}
 
-			// Remove the key from the map  
+			// Remove the key from the map
 			FlowerMapIterator.RemoveCurrent();
 		}
 	}
@@ -465,18 +444,18 @@ void UWorldTerrainSettings::CheckAndReturnFlowersNotInRange(TArray<FIntPoint>& c
 void UWorldTerrainSettings::CheckAndReturnTreesNotInRange(TArray<FIntPoint>& coordinates, TQueue<ATree*>* TreeActorsToRemove) {
 	TreeMapSemaphore->Acquire();
 
-	// Iterate over the keys of SpawnedTreesMap  
+	// Iterate over the keys of SpawnedTreesMap
 	for (TMap<FIntPoint, TArray<ATree*>>::TIterator TreeMapIterator = SpawnedTreesMap.CreateIterator(); TreeMapIterator; ++TreeMapIterator) {
 		const FIntPoint& Key = TreeMapIterator.Key();
 
-		// Check if the key is not in the provided coordinates  
+		// Check if the key is not in the provided coordinates
 		if (!coordinates.Contains(Key)) {
-			// Add each tree actor to the queue  
+			// Add each tree actor to the queue
 			for (ATree* TreeActor : TreeMapIterator.Value()) {
 				TreeActorsToRemove->Enqueue(TreeActor);
 			}
 
-			// Remove the key from the map  
+			// Remove the key from the map
 			TreeMapIterator.RemoveCurrent();
 		}
 	}
@@ -486,17 +465,17 @@ void UWorldTerrainSettings::CheckAndReturnTreesNotInRange(TArray<FIntPoint>& coo
 void UWorldTerrainSettings::CheckAndReturnNpcsNotInRange(TArray<FIntPoint>& coordinates, TQueue<ABasicNPC*>* NpcActorsToRemove) {
 	NpcMapSemaphore->Acquire();
 
-	// Iterate over the keys of SpawnedNpcMap  
+	// Iterate over the keys of SpawnedNpcMap
 	for (TMap<FIntPoint, TArray<ABasicNPC*>>::TIterator NpcMapIterator = SpawnedNpcMap.CreateIterator(); NpcMapIterator; ++NpcMapIterator) {
 		const FIntPoint& Key = NpcMapIterator.Key();
 
-		// Check if the key is not in the provided coordinates  
+		// Check if the key is not in the provided coordinates
 		if (!coordinates.Contains(Key)) {
-			// Add each NPC actor to the queue  
+			// Add each NPC actor to the queue
 			for (ABasicNPC* NpcActor : NpcMapIterator.Value()) {
 				NpcActorsToRemove->Enqueue(NpcActor);
 			}
-			// Remove the key from the map  
+			// Remove the key from the map
 			NpcMapIterator.RemoveCurrent();
 		}
 	}
@@ -504,22 +483,22 @@ void UWorldTerrainSettings::CheckAndReturnNpcsNotInRange(TArray<FIntPoint>& coor
 }
 
 void UWorldTerrainSettings::RemoveSingleGrassFromMap(UCustomProceduralMeshComponent* grass) {
-    GrassMapSemaphore->Acquire();
+	GrassMapSemaphore->Acquire();
 
-    if (SpawnedGrassMap.Contains(grass->ObjectWorldCoords)) {
-        TArray<UCustomProceduralMeshComponent*>& GrassArray = SpawnedGrassMap[grass->ObjectWorldCoords];
-        GrassArray.Remove(grass);
-        if (GrassArray.Num() == 0) {
-            SpawnedGrassMap.Remove(grass->ObjectWorldCoords);
-        }
+	if (SpawnedGrassMap.Contains(grass->ObjectWorldCoords)) {
+		TArray<UCustomProceduralMeshComponent*>& GrassArray = SpawnedGrassMap[grass->ObjectWorldCoords];
+		GrassArray.Remove(grass);
+		if (GrassArray.Num() == 0) {
+			SpawnedGrassMap.Remove(grass->ObjectWorldCoords);
+		}
 
 		// Destroy object
 		GrassCount--;
 		grass->UnregisterComponent();
 		grass->DestroyComponent();
-    }
+	}
 
-    GrassMapSemaphore->Release();
+	GrassMapSemaphore->Release();
 }
 
 void UWorldTerrainSettings::RemoveSingleFlowerFromMap(UCustomProceduralMeshComponent* flower) {
@@ -652,7 +631,7 @@ void UWorldTerrainSettings::CheckIfActorIsNullOrPendingKill() {
 }
 
 void UWorldTerrainSettings::CheckForDuplicateWorldCoordinates() {
-	TSet<FIntPoint> uniqueCoordinates; // A set to store unique FIntPoint values
+	TSet<FIntPoint> uniqueCoordinates;      // A set to store unique FIntPoint values
 	TArray<FIntPoint> duplicateCoordinates; // Array to track duplicates
 
 	for (const TPair<FIntPoint, AActor*>& Elem : SpawnedChunksMap) {
@@ -662,7 +641,7 @@ void UWorldTerrainSettings::CheckForDuplicateWorldCoordinates() {
 		if (uniqueCoordinates.Contains(chunkCoord)) {
 			duplicateCoordinates.Add(chunkCoord);
 		} else {
-			uniqueCoordinates.Add(chunkCoord); 
+			uniqueCoordinates.Add(chunkCoord);
 		}
 	}
 
@@ -680,8 +659,7 @@ void UWorldTerrainSettings::CheckNumberOfElements() {
 	if (SpawnedChunksMap.Num() < 100) {
 		printMapElements("CheckNumberOfElements(): ");
 		UE_LOG(LogTemp, Error, TEXT("Map has less than 100 items!: Map size: %d"), SpawnedChunksMap.Num());
-	}
-	else if (SpawnedChunksMap.Num() > 101) {
+	} else if (SpawnedChunksMap.Num() > 101) {
 		printMapElements("CheckNumberOfElements(): ");
 		UE_LOG(LogTemp, Error, TEXT("Map has more than 100 items!: Map size: %d"), SpawnedChunksMap.Num());
 	}

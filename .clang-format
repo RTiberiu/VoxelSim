@@ -1,0 +1,16 @@
+BasedOnStyle: Microsoft
+BreakBeforeBraces: Attach
+IndentWidth: 4
+TabWidth: 4
+UseTab: ForIndentation
+SpaceBeforeParens: ControlStatements
+AllowShortFunctionsOnASingleLine: None
+ColumnLimit: 0
+PointerAlignment: Left
+ReferenceAlignment: Left
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: Never
+AlignAfterOpenBracket: BlockIndent
+ContinuationIndentWidth: 4
+AllowShortIfStatementsOnASingleLine: WithoutElse

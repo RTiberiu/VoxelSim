@@ -1,9 +1,9 @@
 #include "BasicNPC.h"
 
+#include "..\..\Chunks\ChunkData\ChunkLocationData.h"
 #include "..\..\Chunks\TerrainSettings\WorldTerrainSettings.h"
 #include "DecisionSystemNPC.h"
 #include "KismetProceduralMeshLibrary.h"
-#include "..\..\Chunks\ChunkData\ChunkLocationData.h"
 
 #include "GameFramework/PawnMovementComponent.h"
 
@@ -13,7 +13,7 @@ ABasicNPC::ABasicNPC() {
 	SkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SkeletalMesh"));
 	RootComponent = SkeletalMesh;
 
-	pathToTarget = nullptr;
+	pathToTarget.Reset();
 	pathIsReady = false;
 	waitForNextPositionCheck = false;
 	checkNextPosition = true;
@@ -21,6 +21,7 @@ ABasicNPC::ABasicNPC() {
 	runTargetAnimation = false;
 	isTargetSet = false;
 	isDeathTriggered = false;
+	PathfindingManager = nullptr;
 
 	ThreatsInRange = TArray<ABasicNPC*>();
 	AlliesInRange = TArray<ABasicNPC*>();
@@ -58,7 +59,7 @@ void ABasicNPC::SetAnimationSettingsNPC(UAnimationSettingsNPC* InAnimationSettin
 }
 
 // Should be called after InitializeBrain() and it sets the voxels above the NPC
-// showing various attributes. 
+// showing various attributes.
 void ABasicNPC::SetStatsVoxelsMeshNPC(UStatsVoxelsMeshNPC* InStatsVoxelsMeshNPC) {
 	StatsVoxelsMeshNPCRef = InStatsVoxelsMeshNPC;
 
@@ -74,15 +75,15 @@ void ABasicNPC::InitializeBrain(const AnimalType& animalType) {
 	DecisionSys = NewObject<UDecisionSystemNPC>();
 	DecisionSys->Initialize(this, animalType);
 
-	// Assign the sphere radius from the 
+	// Assign the sphere radius from the
 	InitializeVisionCollisionSphere(DecisionSys->AnimalAttributes.awarenessRadius);
 }
 
 void ABasicNPC::UpdateStatsVoxelsMesh(StatsType statType, NotificationType notificationType) {
 	// Get the current and max value for the stat
-	float CurrentValue{ 0 };
-	float MaxValue{ 0 };
-	int FillnessValue{ 0 };
+	float CurrentValue{0};
+	float MaxValue{0};
+	int FillnessValue{0};
 
 	switch (statType) {
 	case StatsType::Stamina:
@@ -113,7 +114,7 @@ void ABasicNPC::UpdateStatsVoxelsMesh(StatsType statType, NotificationType notif
 		FillnessValue = GetStatsVoxelNumber(CurrentValue, MaxValue);
 	}
 
-	// Get the correct stat mesh and update it 
+	// Get the correct stat mesh and update it
 	UCustomProceduralMeshComponent* Mesh = StatsMeshes[statType];
 	Mesh->ClearAllMeshSections();
 
@@ -128,23 +129,23 @@ void ABasicNPC::UpdateStatsVoxelsMesh(StatsType statType, NotificationType notif
 	TArray<FVector> RecalculatedNormals;
 	TArray<FProcMeshTangent> RecalculatedTangents;
 	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(
-		NewStatVoxelMeshData->Vertices,
-		NewStatVoxelMeshData->Triangles,
-		NewStatVoxelMeshData->UV0,
-		RecalculatedNormals,
-		RecalculatedTangents
+	    NewStatVoxelMeshData->Vertices,
+	    NewStatVoxelMeshData->Triangles,
+	    NewStatVoxelMeshData->UV0,
+	    RecalculatedNormals,
+	    RecalculatedTangents
 	);
 
 	// Use the recalculated normals and tangents and create the mesh section
 	Mesh->CreateMeshSection(
-		0,
-		NewStatVoxelMeshData->Vertices,
-		NewStatVoxelMeshData->Triangles,
-		RecalculatedNormals,
-		NewStatVoxelMeshData->UV0,
-		NewStatVoxelMeshData->Colors,
-		RecalculatedTangents,
-		false
+	    0,
+	    NewStatVoxelMeshData->Vertices,
+	    NewStatVoxelMeshData->Triangles,
+	    RecalculatedNormals,
+	    NewStatVoxelMeshData->UV0,
+	    NewStatVoxelMeshData->Colors,
+	    RecalculatedTangents,
+	    false
 	);
 }
 
@@ -231,13 +232,18 @@ void ABasicNPC::InitializeVisionCollisionSphere(const float& radius) {
 	CollisionNpcDetectionSphere->OnComponentBeginOverlap.AddDynamic(this, &ABasicNPC::OnOverlapBegin);
 	CollisionNpcDetectionSphere->OnComponentEndOverlap.AddDynamic(this, &ABasicNPC::OnOverlapEnd);
 
-	// Debugging // TODO Remove this when done debugging 
+	// Debugging // TODO Remove this when done debugging
 	CollisionNpcDetectionSphere->SetHiddenInGame(false);
 	CollisionNpcDetectionSphere->SetVisibility(WTSR->ShowNpcVisionSpheres);
 	CollisionNpcDetectionSphere->SetLineThickness(2.0f);
 }
 
 void ABasicNPC::RequestPathToPlayer() {
+	if (!PathfindingManager) {
+		UE_LOG(LogTemp, Error, TEXT("Cannot request path because the pathfinding manager is invalid."));
+		return;
+	}
+
 	FVector npcLocation = GetActorLocation();
 	FVector playerLocation = WTSR->getCurrentPlayerPosition();
 
@@ -281,9 +287,7 @@ void ABasicNPC::ConsumePathAndMoveToLocation(const float& DeltaSeconds) {
 
 		// Parabolic arc for Z movement (ensuring start and end match)
 		float midPointZ = FMath::Max(jumpStart.Z, jumpEnd.Z) + jumpHeight;
-		newPosition.Z = FMath::Lerp(FMath::Lerp(jumpStart.Z, midPointZ, jumpProgress),
-			FMath::Lerp(midPointZ, jumpEnd.Z, jumpProgress),
-			jumpProgress);
+		newPosition.Z = FMath::Lerp(FMath::Lerp(jumpStart.Z, midPointZ, jumpProgress), FMath::Lerp(midPointZ, jumpEnd.Z, jumpProgress), jumpProgress);
 
 		jumpProgress += DeltaSeconds * jumpSpeed;
 
@@ -314,24 +318,31 @@ void ABasicNPC::ConsumePathAndMoveToLocation(const float& DeltaSeconds) {
 
 		// Updating stamina when the NPC reaches a new location (not lower than 0)
 		DecisionSys->AnimalAttributes.currentStamina = FMath::Max(
-			DecisionSys->AnimalAttributes.currentStamina - DecisionSys->AnimalAttributes.staminaDepletionRate,
-			0);
+		    DecisionSys->AnimalAttributes.currentStamina - DecisionSys->AnimalAttributes.staminaDepletionRate,
+		    0
+		);
 		UpdateStatsVoxelsMesh(StatsType::Stamina);
 
-		// Small chance to make the NPC look around when they reach a target location 
+		// Small chance to make the NPC look around when they reach a target location
 		// to make their actions less robotic
 		const float random = FMath::FRand();
 		if (random < lookAroundChance) {
 			isLookingAround = true;
 
 			// Looking left or right
-			if (random < 0.5f) lookingDirection = AnimationType::IdleB;
-			else lookingDirection = AnimationType::IdleC;
+			if (random < 0.5f)
+				lookingDirection = AnimationType::IdleB;
+			else
+				lookingDirection = AnimationType::IdleC;
 		}
 	}
 }
 
 void ABasicNPC::SetTargetLocation() {
+	if (!pathToTarget.IsValid()) {
+		return;
+	}
+
 	if (InterruptAction) {
 		InterruptAction = false;
 		SignalEndOfAction();
@@ -353,7 +364,7 @@ void ABasicNPC::SetTargetLocation() {
 		// Reset the frustration counter when a new target is set
 		FrustrationCounter = 0;
 
-		// Return early to prevent a position check if it's the last target and 
+		// Return early to prevent a position check if it's the last target and
 		// the action is to attack an NPC (this is to make sure the overlap can
 		// happen)
 		if (pathToTarget->path.empty() && actionType == ActionType::AttackNpc) {
@@ -368,8 +379,8 @@ void ABasicNPC::SetTargetLocation() {
 
 bool ABasicNPC::IsTargetLocationAvailable() {
 	/*if (this->GetName().Equals("BasicNPC_0")) {  // TODO DELETE THIS AFTER
-		UE_LOG(LogTemp, Warning, TEXT("Checking location for BasicNPC_0"));
-		if (pathToTarget)  pathToTarget->print();
+	    UE_LOG(LogTemp, Warning, TEXT("Checking location for BasicNPC_0"));
+	    if (pathToTarget)  pathToTarget->print();
 	}*/
 
 	// Wait longer before checking if the next position is still occupied.
@@ -395,16 +406,15 @@ bool ABasicNPC::IsTargetLocationAvailable() {
 	return true;
 }
 
-
 void ABasicNPC::TimelineProgress(float Value) {
 	FVector CurrentPosition = FMath::Lerp(timelineStartPos, timeLineEndPos, Value);
 	SetActorLocation(CurrentPosition);
 }
 
-void ABasicNPC::SetPathToTargetAndNotify(Path* InPathToTarget) {
-	pathToTarget = InPathToTarget;
+void ABasicNPC::SetPathToTargetAndNotify(TUniquePtr<Path> InPathToTarget) {
+	pathToTarget = MoveTemp(InPathToTarget);
 
-	if (pathToTarget) {
+	if (pathToTarget.IsValid()) {
 		SetTargetLocation();
 		pathIsReady = true;
 	}
@@ -434,8 +444,8 @@ bool ABasicNPC::IsAllyInRange() {
 	return AlliesInRange.Num() > 0;
 }
 
-bool ABasicNPC::IsFoodNpcInRange() {  
-   return FoodNpcInRange.Num() > 0;  
+bool ABasicNPC::IsFoodNpcInRange() {
+	return FoodNpcInRange.Num() > 0;
 }
 
 bool ABasicNPC::IsFoodSourceInRange() {
@@ -499,7 +509,7 @@ void ABasicNPC::RunTargetAnimationAndUpdateAttributes(float& DeltaSeconds) {
 
 		// Check if the target is an NPC
 		if (ABasicNPC* TargetNPC = Cast<ABasicNPC>(actionTarget)) {
-			// Trigger an attack delay based on attack speed (after the first attack) 
+			// Trigger an attack delay based on attack speed (after the first attack)
 			AttackDelayCounter += DeltaSeconds;
 			if (delayNextAttack && AttackDelayCounter < DecisionSys->AnimalAttributes.attackSpeed) {
 				break;
@@ -508,19 +518,20 @@ void ABasicNPC::RunTargetAnimationAndUpdateAttributes(float& DeltaSeconds) {
 			// Reset attack delay
 			delayNextAttack = false;
 
-			// Attack if the target is close enough and not dead  
+			// Attack if the target is close enough and not dead
 			bool isTargetDead = TargetNPC->IsDead();
 			if (!isTargetDead && IsTargetLocationCloseEnough(currentLocation, TargetNPC->GetCurrentLocation())) {
-				// Reset the counter after the delay is complete  
+				// Reset the counter after the delay is complete
 				AttackDelayCounter = 0.0f;
 
 				PlayAnimation(animationToRunAtTarget);
 
 				// Attack the NPC
 				TargetNPC->AttackAndReduceHealth(
-					DecisionSys->AnimalAttributes.hitDamage,
-					DecisionSys->AnimalAttributes.eatingSpeedRateImproved,
-					this);
+				    DecisionSys->AnimalAttributes.hitDamage,
+				    DecisionSys->AnimalAttributes.eatingSpeedRateImproved,
+				    this
+				);
 				delayNextAttack = true;
 			}
 
@@ -548,14 +559,14 @@ void ABasicNPC::RunTargetAnimationAndUpdateAttributes(float& DeltaSeconds) {
 		if (EatingCounter > DecisionSys->AnimalAttributes.eatingSpeedRateBasic) {
 			// Remove the food target and update hunger if the target is valid
 			if (IsValid(actionTarget)) {
-				// Remove the object when done eating  
+				// Remove the object when done eating
 				RemoveFoodTargetFromMapAndDestroy();
 
-				// Update the food attributes  
+				// Update the food attributes
 				UpdateFoodAttributes(DecisionSys->AnimalAttributes.hungerRecoveryBasic, true);
 			}
 
-			// Trigger end of action and reset counter  
+			// Trigger end of action and reset counter
 			SignalEndOfAction();
 			EatingCounter = 0.0f;
 		}
@@ -563,7 +574,7 @@ void ABasicNPC::RunTargetAnimationAndUpdateAttributes(float& DeltaSeconds) {
 	case ActionType::RestAfterBasicFood:
 		PlayAnimation(animationToRunAtTarget);
 		if (UpdateStamina(DeltaSeconds, DecisionSys->AnimalAttributes.restAfterFoodBasic)) {
-			// Trigger end of action and reset counter  
+			// Trigger end of action and reset counter
 			SignalEndOfAction();
 			RestCounter = 0.0f;
 		}
@@ -571,7 +582,7 @@ void ABasicNPC::RunTargetAnimationAndUpdateAttributes(float& DeltaSeconds) {
 	case ActionType::RestAfterImprovedFood:
 		PlayAnimation(animationToRunAtTarget);
 		if (UpdateStamina(DeltaSeconds, DecisionSys->AnimalAttributes.restAfterFoodImproved)) {
-			// Trigger end of action and reset counter  
+			// Trigger end of action and reset counter
 			SignalEndOfAction();
 			RestCounter = 0.0f;
 		}
@@ -587,21 +598,21 @@ void ABasicNPC::RunTargetAnimationAndUpdateAttributes(float& DeltaSeconds) {
 		break;
 	}
 
-	// TODO Update attributes  
+	// TODO Update attributes
 
-	// TODO Set the runTargetAnimation to false when done  
+	// TODO Set the runTargetAnimation to false when done
 }
 
 bool ABasicNPC::IsTargetLocationCloseEnough(FVector& current, FVector& target) {
 	const float Margin = 30.0f;
 	return FMath::Abs(target.X - current.X) <= Margin &&
-		FMath::Abs(target.Y - current.Y) <= Margin;
+	       FMath::Abs(target.Y - current.Y) <= Margin;
 }
 
 // When an action is completed, modify variables to trigger a new action request
 void ABasicNPC::SignalEndOfAction() {
 	pathIsReady = false;
-	pathToTarget = nullptr;
+	pathToTarget.Reset();
 	isTargetSet = false;
 	runTargetAnimation = false;
 }
@@ -609,7 +620,7 @@ void ABasicNPC::SignalEndOfAction() {
 void ABasicNPC::AdjustRotationTowardsNextLocation(const FVector& actorLocation, const FVector& targetPosition, const float& deltaTime) {
 	// Calculating direction and yaw angle
 	FVector direction = (targetPosition - actorLocation).GetSafeNormal();
-	float targetYaw = FMath::Atan2(direction.Y, direction.X) * 180.0f / PI;  // Converting radians to degrees
+	float targetYaw = FMath::Atan2(direction.Y, direction.X) * 180.0f / PI; // Converting radians to degrees
 
 	// Offset for correct NPC direction
 	targetYaw -= 90.0f;
@@ -659,7 +670,7 @@ void ABasicNPC::UpdateFoodAttributes(const uint8& hungerRecovered, bool ateBasic
 			UpdateStatsVoxelsMesh(StatsType::Hunger);
 		}
 	} else {
-		// Add directly to the food pouch 
+		// Add directly to the food pouch
 		DecisionSys->AnimalAttributes.foodPouch += hungerRecovered;
 		UpdateStatsVoxelsMesh(StatsType::FoodPouch);
 	}
@@ -707,7 +718,7 @@ void ABasicNPC::UpdateHunger(const float& DeltaSeconds) {
 		// If there's still some hunger left, take from currentHunger
 		if (amountNeeded > 0) {
 			int newHunger = static_cast<int>(Attributes.currentHunger) - amountNeeded;
-			
+
 			// Clamp at zero and cast back to uint8_t
 			Attributes.currentHunger = static_cast<uint8_t>(FMath::Max(newHunger, 0));
 		}
@@ -733,8 +744,8 @@ bool ABasicNPC::UpdateStamina(const float& DeltaSeconds, const uint8_t& Threshol
 
 		// Ensure it doesn't go above max stamina
 		DecisionSys->AnimalAttributes.currentStamina = FMath::Max(
-			newStamina,
-			DecisionSys->AnimalAttributes.maxStamina
+		    newStamina,
+		    DecisionSys->AnimalAttributes.maxStamina
 		);
 
 		UpdateStatsVoxelsMesh(StatsType::Stamina);
@@ -743,7 +754,6 @@ bool ABasicNPC::UpdateStamina(const float& DeltaSeconds, const uint8_t& Threshol
 	}
 	return false;
 }
-
 
 // Run the death animation and set that the NPC should be destroyed
 void ABasicNPC::TriggerNpcDeath(uint8_t attackerEatingSpeed) {
@@ -774,7 +784,6 @@ void ABasicNPC::OnOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor*
 		if (OverlappingNPC) {
 			AddOverlappingNpcToVisionList(OverlappingNPC);
 		}
-
 	}
 
 	// Attempt to remove the component from the food source vision list if it's a flower or grass
@@ -801,7 +810,7 @@ void ABasicNPC::OnOverlapEnd(UPrimitiveComponent* OverlappedComponent, AActor* O
 void ABasicNPC::AddOverlappingNpcToVisionList(ABasicNPC* OverlappingNpc) {
 	const AnimalType& OverlappingNpcType = OverlappingNpc->GetType();
 
-	// Check if it's food 
+	// Check if it's food
 	if ((Relationships.FoodType & OverlappingNpcType) == OverlappingNpcType) {
 		FoodNpcInRange.Add(OverlappingNpc);
 		return;
@@ -823,23 +832,23 @@ void ABasicNPC::AddOverlappingNpcToVisionList(ABasicNPC* OverlappingNpc) {
 void ABasicNPC::RemoveOverlappingNpcFromVisionList(ABasicNPC* OverlappingNpc) {
 	const AnimalType& OverlappingNpcType = OverlappingNpc->GetType();
 
-	// Check if it's food 
+	// Check if it's food
 	if ((Relationships.FoodType & OverlappingNpcType) == OverlappingNpcType) {
-		//UE_LOG(LogTemp, Warning, TEXT("Removed %s from the FOOD NPC vision list."), *OverlappingNpc->GetName());
+		// UE_LOG(LogTemp, Warning, TEXT("Removed %s from the FOOD NPC vision list."), *OverlappingNpc->GetName());
 		FoodNpcInRange.Remove(OverlappingNpc);
 		return;
 	}
 
 	// Check if it's ally
 	if ((Relationships.Allies & OverlappingNpcType) == OverlappingNpcType) {
-		//UE_LOG(LogTemp, Warning, TEXT("Removed %s from the ALLIES vision list."), *OverlappingNpc->GetName());
+		// UE_LOG(LogTemp, Warning, TEXT("Removed %s from the ALLIES vision list."), *OverlappingNpc->GetName());
 		AlliesInRange.Remove(OverlappingNpc);
 		return;
 	}
 
 	// Check if it's threat
 	if ((Relationships.Enemies & OverlappingNpcType) == OverlappingNpcType) {
-		//UE_LOG(LogTemp, Warning, TEXT("Removed %s from the THREATS vision list."), *OverlappingNpc->GetName());
+		// UE_LOG(LogTemp, Warning, TEXT("Removed %s from the THREATS vision list."), *OverlappingNpc->GetName());
 		ThreatsInRange.Remove(OverlappingNpc);
 		return;
 	}
@@ -864,18 +873,14 @@ void ABasicNPC::RemoveOverlappingBasicFoodSource(UPrimitiveComponent* Overlappin
 }
 
 ABasicNPC* ABasicNPC::GetClosestInList(const TArray<ABasicNPC*>& list, bool ChooseOptimalAction, const int& IncrementTargetInVisionList) {
-	return GetClosestInListGeneric<ABasicNPC>(list, [](ABasicNPC* npc) -> FVector {
-		return npc->GetCurrentLocation();
-		}, ChooseOptimalAction, IncrementTargetInVisionList);
+	return GetClosestInListGeneric<ABasicNPC>(list, [](ABasicNPC* npc) -> FVector { return npc->GetCurrentLocation(); }, ChooseOptimalAction, IncrementTargetInVisionList);
 }
 
 UCustomProceduralMeshComponent* ABasicNPC::GetClosestInList(const TArray<UCustomProceduralMeshComponent*>& list, bool ChooseOptimalAction, const int& IncrementTargetInVisionList) {
-	return GetClosestInListGeneric<UCustomProceduralMeshComponent>(list, [](UCustomProceduralMeshComponent* comp) -> FVector {
-		return comp->GetComponentLocation();
-		}, ChooseOptimalAction, IncrementTargetInVisionList);
+	return GetClosestInListGeneric<UCustomProceduralMeshComponent>(list, [](UCustomProceduralMeshComponent* comp) -> FVector { return comp->GetComponentLocation(); }, ChooseOptimalAction, IncrementTargetInVisionList);
 }
 
-// Notify NPCs in the vision list based on the current action 
+// Notify NPCs in the vision list based on the current action
 // (alert allies of enemies, food, or trade)
 void ABasicNPC::NotifyNpcsAroundOfEvent(const NpcAction& CurrentAction) {
 	UpdateStatsVoxelsMesh(StatsType::Notification, NotificationType::Notifying);
@@ -895,7 +900,7 @@ void ABasicNPC::ReceiveNotificationOfEvent(const NpcAction& ActionTriggered) {
 		return;
 	}
 
-	switch(ActionTriggered.ActionType) {
+	switch (ActionTriggered.ActionType) {
 	case ActionType::Flee:
 		if (FMath::FRand() < DecisionSys->AnimalAttributes.survivalInstinct) {
 			InterruptAction = true;
@@ -907,7 +912,7 @@ void ABasicNPC::ReceiveNotificationOfEvent(const NpcAction& ActionTriggered) {
 	case ActionType::AttackNpc:
 		if (FMath::FRand() < DecisionSys->AnimalAttributes.chaseDesire) {
 			UpdateStatsVoxelsMesh(StatsType::Notification, NotificationType::Accepted);
-			
+
 			// Replace current action and request a path to that location
 			ReplaceCurrentActionWithNotifiedAction(ActionTriggered);
 			TriggerPathfindingTask();
@@ -951,12 +956,18 @@ bool ABasicNPC::AcceptAttackFoodSourceNotification() {
 }
 
 void ABasicNPC::TriggerPathfindingTask() {
+	if (!PathfindingManager) {
+		UE_LOG(LogTemp, Error, TEXT("Cannot trigger pathfinding because the pathfinding manager is invalid."));
+		SignalEndOfAction();
+		return;
+	}
+
 	// Adjust location for grass and flower, otherwise the pathfinding will go for the adjacent voxel
 	if (actionType == ActionType::AttackFoodSource) {
 		targetLocation = FVector(
-			targetLocation.X + WTSR->HalfUnrealScale, 
-			targetLocation.Y + WTSR->HalfUnrealScale, 
-			targetLocation.Z
+		    targetLocation.X + WTSR->HalfUnrealScale,
+		    targetLocation.Y + WTSR->HalfUnrealScale,
+		    targetLocation.Z
 		);
 	}
 
@@ -973,7 +984,7 @@ void ABasicNPC::BeginPlay() {
 		AIController->Possess(this);
 	}
 
-	PlayAnimation(AnimationType::IdleA); 
+	PlayAnimation(AnimationType::IdleA);
 }
 
 void ABasicNPC::Tick(float DeltaSeconds) {
@@ -1054,7 +1065,7 @@ void ABasicNPC::Tick(float DeltaSeconds) {
 		actionType = NextAction.ActionType;
 		actionTarget = NextAction.Target;
 
-		// Notify NPCs in the vision list 
+		// Notify NPCs in the vision list
 		if (NextAction.ShouldNotifyOthers) {
 			NotifyNpcsAroundOfEvent(NextAction);
 		}

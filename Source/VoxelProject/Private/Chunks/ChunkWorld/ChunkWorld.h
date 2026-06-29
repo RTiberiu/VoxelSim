@@ -2,15 +2,15 @@
 
 #pragma once
 
+#include "..\..\NPC\StatsNPC\StatsVoxelsMeshNPC.h"
+#include "..\ChunkData\ChunkLocationData.h"
+#include "..\ChunkMeshThreads\ChunkMeshDataRunnable.h"
+#include "..\ChunkMeshThreads\ChunksLocationRunnable.h"
+#include "..\SingleChunk\BinaryChunk.h"
+#include "..\Vegetation\Flowers\FlowerMeshGenerator.h"
+#include "..\Vegetation\Grass\GrassMeshGenerator.h"
 #include "..\Vegetation\Trees\Tree.h"
 #include "..\Vegetation\Trees\TreeMeshGenerator.h"
-#include "..\Vegetation\Grass\GrassMeshGenerator.h"
-#include "..\Vegetation\Flowers\FlowerMeshGenerator.h"
-#include "..\SingleChunk\BinaryChunk.h"
-#include "..\ChunkMeshThreads\ChunksLocationRunnable.h"
-#include "..\ChunkMeshThreads\ChunkMeshDataRunnable.h"
-#include "..\ChunkData\ChunkLocationData.h"
-#include "..\..\NPC\StatsNPC\StatsVoxelsMeshNPC.h"
 
 #include "..\..\NPC\SettingsNPC\AnimationSettingsNPC.h"
 
@@ -19,12 +19,12 @@
 #include "..\..\Utils\CustomMesh\CustomProceduralMeshComponent.h"
 #include "..\..\Utils\TestingConfigurations\TestingConfigurations.h"
 
-#include <chrono>
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Templates/UniquePtr.h"
+#include <chrono>
 
 #include "ChunkWorld.generated.h"
-
 
 class ABinaryChunk;
 class WorldTerrainSettings; // forward declaration to the world settings
@@ -35,7 +35,7 @@ UCLASS()
 class AChunkWorld : public AActor {
 	GENERATED_BODY()
 
-public:
+  public:
 	// Sets default values for this actor's properties
 	AChunkWorld();
 
@@ -47,8 +47,9 @@ public:
 
 	void InitializePathfindingManager();
 
-	PathfindingThreadManager* PathfindingManager;
-private:
+	TUniquePtr<PathfindingThreadManager> PathfindingManager;
+
+  private:
 	APerlinNoiseSettings* PerlinNoiseSettingsRef;
 	APerlinNoiseSettings*& PNSR = PerlinNoiseSettingsRef;
 
@@ -84,15 +85,15 @@ private:
 	void generateFlowerMeshVariations();
 
 	// Runnable to handle spawning the chunks
-	ChunksLocationRunnable* chunksLocationRunnable;
-	FRunnableThread* chunksLocationThread;
+	TUniquePtr<ChunksLocationRunnable> chunksLocationRunnable;
+	TUniquePtr<FRunnableThread> chunksLocationThread;
 	FThreadSafeBool isLocationTaskRunning;
 
-	ChunkMeshDataRunnable* chunkMeshDataRunnable;
-	FRunnableThread* chunkMeshDataThread;
+	TUniquePtr<ChunkMeshDataRunnable> chunkMeshDataRunnable;
+	TUniquePtr<FRunnableThread> chunkMeshDataThread;
 	FThreadSafeBool isMeshTaskRunning;
 
-	// Handle logic after the terrain is generated 
+	// Handle logic after the terrain is generated
 	void onNewTerrainGenerated();
 
 	// Calculate average time spawn for BinaryChunk
@@ -114,7 +115,7 @@ private:
 
 	// NPC Settings
 	TSubclassOf<AActor> NPC;
-	
+
 	// Helper methods to remove vegetation spawn points and destroy actors
 	void RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyPosition);
 	void DestroyTreeActors();
@@ -178,10 +179,10 @@ private:
 	TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> TreeChunkSpawnPoints;
 	TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>*> NpcChunkSpawnPoints;
 
-	// Control variable for printing the chunk mesh compute time 
+	// Control variable for printing the chunk mesh compute time
 	int lastLoggedChunkCount = 0;
 
-protected:
+  protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
@@ -191,5 +192,4 @@ protected:
 	FIntPoint GetChunkCoordinates(FVector Position) const;
 
 	virtual void Tick(float DeltaSeconds) override;
-
 };

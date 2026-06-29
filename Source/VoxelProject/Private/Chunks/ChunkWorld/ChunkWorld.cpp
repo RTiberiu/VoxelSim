@@ -1,14 +1,13 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "ChunkWorld.h"
-#include "..\TerrainSettings\WorldTerrainSettings.h"
-#include "..\ChunkData\ChunkLocationData.h"
-#include "..\SingleChunk\BinaryChunk.h" 
 #include "..\..\NPC\BasicNPC\BasicNPC.h"
+#include "..\..\NPC\SettingsNPC\RelationshipSettingsNPC.h"
+#include "..\ChunkData\ChunkLocationData.h"
+#include "..\SingleChunk\BinaryChunk.h"
+#include "..\TerrainSettings\WorldTerrainSettings.h"
 #include "GameFramework/DefaultPawn.h"
 #include "GameFramework/FloatingPawnMovement.h"
-#include "..\..\NPC\SettingsNPC\RelationshipSettingsNPC.h"
 #include <Kismet/GameplayStatics.h>
 
 #include "ProceduralMeshComponent.h"
@@ -16,7 +15,7 @@
 #include <set>
 
 // Sets default values
-AChunkWorld::AChunkWorld() : chunksLocationRunnable(nullptr), chunksLocationThread(nullptr), isLocationTaskRunning(false), isMeshTaskRunning(false) {
+AChunkWorld::AChunkWorld() : isLocationTaskRunning(false), isMeshTaskRunning(false) {
 	// Set this actor to call Tick() every frame.  Yosu can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 	// Locking the tick at 60fps
@@ -59,18 +58,18 @@ void AChunkWorld::SetStatsVoxelsMeshNPC(UStatsVoxelsMeshNPC* InStatsVoxelsMeshNP
 void AChunkWorld::InitializePathfindingManager() {
 	// Initialize thread pool for the NPC pathfinding
 	const int PathfindingThreads = 3;
-	PathfindingManager = new PathfindingThreadManager(WTSR, CLDR, PathfindingThreads);
+	PathfindingManager = MakeUnique<PathfindingThreadManager>(WTSR, CLDR, PathfindingThreads);
 }
 
 void AChunkWorld::printExecutionTime(Time& start, Time& end, const char* functionName) {
 	std::chrono::duration<double, std::milli> duration = end - start;
 	UE_LOG(LogTemp, Warning, TEXT("%s() took %d seconds, %d milliseconds to execute."), *FString(functionName),
-		static_cast<int>((duration.count() / 1000)) % 60,
-		static_cast<int>(fmod(duration.count(), 1000)));
+	       static_cast<int>((duration.count() / 1000)) % 60,
+	       static_cast<int>(fmod(duration.count(), 1000)));
 }
 
 void AChunkWorld::spawnInitialWorld() {
-	int spawnedChunks{ 0 };
+	int spawnedChunks{0};
 
 	// Add initial chunk position to spawn
 	FIntPoint PlayerStartCoords = FIntPoint(0, 0);
@@ -82,7 +81,7 @@ void AChunkWorld::spawnInitialWorld() {
 	CLDR->AddNpcChunkSpawnPosition(ChunkWorldCoords);
 
 	// Add chunk positions to spawn by going in a spiral from origin position
-	std::set<std::pair<int, int>> avoidPosition = { {0,0} };
+	std::set<std::pair<int, int>> avoidPosition = {{0, 0}};
 	int currentSpiralRing = 1;
 	int maxSpiralRings = WTSR->DrawDistance;
 	int vegetationMax = WTSR->VegetationDrawDistance;
@@ -92,7 +91,7 @@ void AChunkWorld::spawnInitialWorld() {
 	while (currentSpiralRing <= maxSpiralRings) {
 		for (int x = -currentSpiralRing; x < currentSpiralRing; x++) {
 			for (int z = -currentSpiralRing; z < currentSpiralRing; z++) {
-				std::pair<int, int> currentPair = { x, z };
+				std::pair<int, int> currentPair = {x, z};
 
 				if (avoidPosition.find(currentPair) != avoidPosition.end()) {
 					continue;
@@ -185,7 +184,6 @@ void AChunkWorld::generateTreeMeshVariations() {
 
 	Time end = std::chrono::high_resolution_clock::now();
 	printExecutionTime(start, end, std::format("Generated {} tree variations.", WTSR->TreeVariations).c_str());
-
 }
 
 void AChunkWorld::generateGrassMeshVariations() {
@@ -224,7 +222,7 @@ void AChunkWorld::generateFlowerMeshVariations() {
 
 // Perform any actions after generating the new chunks
 void AChunkWorld::onNewTerrainGenerated() {
-	// Spawn the tree TODO Continue from here 
+	// Spawn the tree TODO Continue from here
 }
 
 void AChunkWorld::destroyCurrentWorldChunks() {
@@ -262,7 +260,7 @@ void AChunkWorld::SpawnTrees(FVoxelObjectLocationData LocationData, FVector Play
 
 		// Check if the player is within the collision boundaries
 		bool withinCollisionDistance = (LocationData.ObjectPosition.X >= minX && LocationData.ObjectPosition.X <= maxX) &&
-			(LocationData.ObjectPosition.Y >= minY && LocationData.ObjectPosition.Y <= maxY);
+		                               (LocationData.ObjectPosition.Y >= minY && LocationData.ObjectPosition.Y <= maxY);
 
 		if (withinCollisionDistance) {
 			SpawnedTreeActor->SetTreeCollision(true);
@@ -290,9 +288,9 @@ void AChunkWorld::SpawnGrass(FVoxelObjectLocationData LocationData) {
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Mesh->SetCollisionResponseToAllChannels(ECR_Overlap);
 
-	//Mesh->ComponentTags.Add(TEXT("Grass"));
+	// Mesh->ComponentTags.Add(TEXT("Grass"));
 
-	// Setting custom data 
+	// Setting custom data
 	Mesh->MeshType = MeshType::Grass;
 	Mesh->ObjectWorldCoords = LocationData.ObjectWorldCoords;
 
@@ -322,9 +320,9 @@ void AChunkWorld::SpawnFlower(FVoxelObjectLocationData LocationData) {
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Mesh->SetCollisionResponseToAllChannels(ECR_Overlap);
 
-	//Mesh->ComponentTags.Add(TEXT("Flower"));
+	// Mesh->ComponentTags.Add(TEXT("Flower"));
 
-	// Setting custom data 
+	// Setting custom data
 	Mesh->MeshType = MeshType::Flower;
 	Mesh->ObjectWorldCoords = LocationData.ObjectWorldCoords;
 
@@ -351,7 +349,7 @@ void AChunkWorld::SpawnNPC(TPair<FVoxelObjectLocationData, AnimalType> LocationA
 		SpawnedNPCActor->SetWorldTerrainSettings(WTSR);
 		SpawnedNPCActor->SetChunkLocationData(CLDR);
 		SpawnedNPCActor->SetAnimationSettingsNPC(AnimS);
-		SpawnedNPCActor->SetPathfindingManager(PathfindingManager);
+		SpawnedNPCActor->SetPathfindingManager(PathfindingManager.Get());
 		SpawnedNPCActor->SetNPCWorldLocation(LocationAndType.Key.ObjectWorldCoords);
 		SpawnedNPCActor->InitializeBrain(LocationAndType.Value);
 		SpawnedNPCActor->SetStatsVoxelsMeshNPC(SVMNpc);
@@ -367,7 +365,6 @@ void AChunkWorld::SpawnNPC(TPair<FVoxelObjectLocationData, AnimalType> LocationA
 	} else {
 		UE_LOG(LogTemp, Error, TEXT("Failed to spawn NPC Actor!"));
 	}
-
 }
 
 // Remove the vegetation (tree, grass, flowers) spawn points, and add the actor pointers
@@ -379,7 +376,7 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 	// Remove trees to spawn in the ChunkWorld cache
 	TreePositionsToSpawn.RemoveAll([&](const FVoxelObjectLocationData& Item) {
 		return Item.ObjectWorldCoords == destroyPosition;
-		});
+	});
 
 	// Remove remaining grass to spawn position at current chunk destroyed
 	CLDR->RemoveGrassSpawnPosition(destroyPosition);
@@ -387,7 +384,7 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 	// Remove grass to spawn in the ChunkWorld cache
 	GrassPositionsToSpawn.RemoveAll([&](const FVoxelObjectLocationData& Item) {
 		return Item.ObjectWorldCoords == destroyPosition;
-		});
+	});
 
 	// Remove remaining flower to spawn position at current chunk destroyed
 	CLDR->RemoveFlowerSpawnPosition(destroyPosition);
@@ -395,7 +392,7 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 	// Remove flower to spawn in the ChunkWorld cache
 	FlowerPositionsToSpawn.RemoveAll([&](const FVoxelObjectLocationData& Item) {
 		return Item.ObjectWorldCoords == destroyPosition;
-		});
+	});
 
 	// Remove remaining NPC to spawn position at current chunk destroyed
 	CLDR->RemoveNPCSpawnPosition(destroyPosition);
@@ -403,7 +400,7 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 	// Remove NPCs to spawn in the ChunkWorld cache
 	NPCPositionsToSpawn.RemoveAll([&](const TPair<FVoxelObjectLocationData, AnimalType>& Item) {
 		return Item.Key.ObjectWorldCoords == destroyPosition;
-		});
+	});
 }
 
 void AChunkWorld::DestroyTreeActors() {
@@ -506,7 +503,7 @@ void AChunkWorld::SpawnMultipleGrassObjects() {
 
 		// Print the grass count every 50
 		/*if (WTSR->GrassCount % 1000 == 0) {
-			UE_LOG(LogTemp, Log, TEXT("Grass count: %d"), WTSR->GrassCount);
+		    UE_LOG(LogTemp, Log, TEXT("Grass count: %d"), WTSR->GrassCount);
 		}*/
 
 		GrassPositionsToSpawn.RemoveAt(positionIndex);
@@ -536,13 +533,12 @@ void AChunkWorld::SpawnMultipleFlowerObjects() {
 
 		// Print the flower count every 50
 		/*if (WTSR->FlowerCount % 50 == 0) {
-			UE_LOG(LogTemp, Log, TEXT("Flower count: %d"), WTSR->FlowerCount);
+		    UE_LOG(LogTemp, Log, TEXT("Flower count: %d"), WTSR->FlowerCount);
 		}*/
 
 		FlowerPositionsToSpawn.RemoveAt(positionIndex);
 		spawnedFlowerCounter++;
 	}
-
 }
 
 void AChunkWorld::SpawnMultipleNpcObjects() {
@@ -564,7 +560,7 @@ void AChunkWorld::SpawnMultipleNpcObjects() {
 		}
 
 		// Print the NPC count every 10
-		//if (WTSR->NPCCount % 10 == 0) {
+		// if (WTSR->NPCCount % 10 == 0) {
 		//	UE_LOG(LogTemp, Log, TEXT("NPC count: %d"), WTSR->NPCCount);
 		//}
 
@@ -603,7 +599,7 @@ void AChunkWorld::SpawnMultipleTreeObjects(const FVector& PlayerPosition) {
 }
 
 void AChunkWorld::UpdateChunksCollision() {
-	// Enabling and disabling collision for chunks 
+	// Enabling and disabling collision for chunks
 	ABinaryChunk* removeCollisionChunk = WTSR->GetChunkToRemoveCollision();
 	ABinaryChunk* enableCollisionChunk = WTSR->GetChunkToEnableCollision();
 
@@ -617,7 +613,7 @@ void AChunkWorld::UpdateChunksCollision() {
 }
 
 void AChunkWorld::UpdateTreesCollision() {
-	// Enabling and disabling collision for trees 
+	// Enabling and disabling collision for trees
 	ATree* removeCollisionTree = WTSR->GetTreeToRemoveCollision();
 	ATree* enableCollisionTree = WTSR->GetTreeToEnableCollision();
 
@@ -661,7 +657,7 @@ void AChunkWorld::SpawnSingleChunk(const FVector& PlayerPosition) {
 
 		// Check if the player is within the collision boundaries
 		bool withinCollisionDistance = (waitingMeshLocationData.ObjectPosition.X >= minX && waitingMeshLocationData.ObjectPosition.X <= maxX) &&
-			(waitingMeshLocationData.ObjectPosition.Y >= minY && waitingMeshLocationData.ObjectPosition.Y <= maxY);
+		                               (waitingMeshLocationData.ObjectPosition.Y >= minY && waitingMeshLocationData.ObjectPosition.Y <= maxY);
 
 		if (withinCollisionDistance) {
 			SpawnedChunkActor->SetChunkCollision(true);
@@ -683,7 +679,7 @@ void AChunkWorld::DestroySingleChunk() {
 	FIntPoint chunkToDestroyPosition{};
 	bool doesDestroyPositionExist = CLDR->getChunkToDestroyPosition(chunkToDestroyPosition);
 
-	// I need to check if the destroy position exists in the map, otherwise I need to push it back 
+	// I need to check if the destroy position exists in the map, otherwise I need to push it back
 	if (!doesDestroyPositionExist) {
 		return;
 	}
@@ -735,12 +731,35 @@ void AChunkWorld::BeginPlay() {
 void AChunkWorld::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
 
-	// Cleanup 
+	// Cleanup
 	if (PathfindingManager) {
 		PathfindingManager->ShutDownThreadPool();
-		delete PathfindingManager;
-		PathfindingManager = nullptr;
+		PathfindingManager.Reset();
 	}
+
+	if (chunksLocationRunnable) {
+		chunksLocationRunnable->Stop();
+	}
+
+	if (chunksLocationThread) {
+		chunksLocationThread->WaitForCompletion();
+		chunksLocationThread.Reset();
+	}
+
+	chunksLocationRunnable.Reset();
+	isLocationTaskRunning.AtomicSet(false);
+
+	if (chunkMeshDataRunnable) {
+		chunkMeshDataRunnable->Stop();
+	}
+
+	if (chunkMeshDataThread) {
+		chunkMeshDataThread->WaitForCompletion();
+		chunkMeshDataThread.Reset();
+	}
+
+	chunkMeshDataRunnable.Reset();
+	isMeshTaskRunning.AtomicSet(false);
 
 	if (PerlinNoiseSettingsRef) {
 		PerlinNoiseSettingsRef = nullptr;
@@ -823,8 +842,8 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 
 	if (!isLocationTaskRunning && (isPlayerMovingOnAxisX || isPlayerMovingOnAxisZ)) {
 		isLocationTaskRunning.AtomicSet(true);
-		chunksLocationRunnable = new ChunksLocationRunnable(PlayerPosition, WTSR, CLDR, &GrassActorsToRemove, &FlowerActorsToRemove, &TreeActorsToRemove, &NpcActorsToRemove);
-		chunksLocationThread = FRunnableThread::Create(chunksLocationRunnable, TEXT("chunksLocationThread"), 0, TPri_Normal);
+		chunksLocationRunnable = MakeUnique<ChunksLocationRunnable>(PlayerPosition, WTSR, CLDR, &GrassActorsToRemove, &FlowerActorsToRemove, &TreeActorsToRemove, &NpcActorsToRemove);
+		chunksLocationThread.Reset(FRunnableThread::Create(chunksLocationRunnable.Get(), TEXT("chunksLocationThread"), 0, TPri_Normal));
 	}
 
 	// Clean up terrain thread if it's done computing
@@ -834,13 +853,11 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 		if (chunksLocationThread) {
 			chunksLocationRunnable->Stop();
 			chunksLocationThread->WaitForCompletion();
-			delete chunksLocationThread;
-			chunksLocationThread = nullptr;
+			chunksLocationThread.Reset();
 		}
 
 		if (chunksLocationRunnable) {
-			delete chunksLocationRunnable;
-			chunksLocationRunnable = nullptr;
+			chunksLocationRunnable.Reset();
 		}
 
 		isLocationTaskRunning.AtomicSet(false);
@@ -854,8 +871,8 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 		if (doesSpawnPositionExist) {
 			// Calculate the chunk mesh data in a separate thread
 			isMeshTaskRunning.AtomicSet(true);
-			chunkMeshDataRunnable = new ChunkMeshDataRunnable(chunkToSpawnPosition, WTSR, CLDR, PNSR);
-			chunkMeshDataThread = FRunnableThread::Create(chunkMeshDataRunnable, TEXT("chunkMeshDataThread"), 0, TPri_Normal);
+			chunkMeshDataRunnable = MakeUnique<ChunkMeshDataRunnable>(chunkToSpawnPosition, WTSR, CLDR, PNSR);
+			chunkMeshDataThread.Reset(FRunnableThread::Create(chunkMeshDataRunnable.Get(), TEXT("chunkMeshDataThread"), 0, TPri_Normal));
 		}
 	}
 
@@ -866,13 +883,11 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 		if (chunkMeshDataThread) {
 			chunkMeshDataRunnable->Stop();
 			chunkMeshDataThread->WaitForCompletion();
-			delete chunkMeshDataThread;
-			chunkMeshDataThread = nullptr;
+			chunkMeshDataThread.Reset();
 		}
 
 		if (chunkMeshDataRunnable) {
-			delete chunkMeshDataRunnable;
-			chunkMeshDataRunnable = nullptr;
+			chunkMeshDataRunnable.Reset();
 		}
 
 		isMeshTaskRunning.AtomicSet(false);
@@ -905,7 +920,6 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 	}
 	FramesCounterCheckSpawnedPointsInRange++;
 
-
 	// Spawn and remove a few Tree objects
 	SpawnMultipleTreeObjects(PlayerPosition);
 	DestroyTreeActors();
@@ -914,7 +928,7 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 	UpdateTreesCollision();
 
 	// Uncomment to use the testing configurations instead
-	//UseTestingConfigurations(ConfigToRun::NotificationAttackFoodSource);
+	// UseTestingConfigurations(ConfigToRun::NotificationAttackFoodSource);
 
 	SpawnMultipleGrassObjects();
 	SpawnMultipleFlowerObjects();

@@ -9,6 +9,7 @@
 #include "Containers/Queue.h"
 #include "..\..\NPC\BasicNPC\BasicNPC.h"
 #include "Misc/ScopeLock.h"
+#include "Templates/UniquePtr.h"
 #include "ChunkLocationData.generated.h"
 
 class ABasicNPC;
@@ -117,11 +118,11 @@ private:
 
     // Queue for storing chunks position that need to be spawned
     TQueue<FVoxelObjectLocationData> chunksToSpawnPositions;
-    FairSemaphore* ChunksToSpawnSemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
+    TUniquePtr<FairSemaphore> ChunksToSpawnSemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
 
     // Queue for storing chunks position that need to be destroyed
     TQueue<FIntPoint> chunksToDestroyPositions;
-    FairSemaphore* ChunksToDestroySemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
+    TUniquePtr<FairSemaphore> ChunksToDestroySemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
 
     TQueue<ATree*> unspawnedTreesToDestroy;
     TQueue<UProceduralMeshComponent*> unspawnedGrassToDestroy;
@@ -138,16 +139,16 @@ private:
     TQueue<FVoxelObjectMeshData> computedMeshData;
 
     // Queue for storing all vegetation spawn points data (even outside of the LOD range)
-    FairSemaphore* TreesToSpawnSemaphore;
+    TUniquePtr<FairSemaphore> TreesToSpawnSemaphore;
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>> treesSpawnPositions;
 
-    FairSemaphore* GrassToSpawnSemaphore;
+    TUniquePtr<FairSemaphore> GrassToSpawnSemaphore;
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>> grassSpawnPositions;
 
-    FairSemaphore* FlowersToSpawnSemaphore;
+    TUniquePtr<FairSemaphore> FlowersToSpawnSemaphore;
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>> flowersSpawnPositions;
 
-    FairSemaphore* NPCToSpawnSemaphore;
+    TUniquePtr<FairSemaphore> NPCToSpawnSemaphore;
     TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>> npcSpawnPositions;
 
     // Map to store the current Chunk Points where Vegetation should spawn
@@ -157,18 +158,18 @@ private:
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> TreeChunkSpawnPoints;
     TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>*> NpcChunkSpawnPoints;
 
-    FairSemaphore* VegetationChunkSemaphore;
-    FairSemaphore* TreeChunkSemaphore;
-    FairSemaphore* NpcChunkSemaphore;
+    TUniquePtr<FairSemaphore> VegetationChunkSemaphore;
+    TUniquePtr<FairSemaphore> TreeChunkSemaphore;
+    TUniquePtr<FairSemaphore> NpcChunkSemaphore;
 
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> grassInRangeSpawnPositions;
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> flowersInRangeSpawnPositions;
     TMap<FIntPoint, TArray<FVoxelObjectLocationData>*> treesInRangeSpawnPositions;
     TMap<FIntPoint, TArray<TPair<FVoxelObjectLocationData, AnimalType>>*> npcInRangeSpawnPositions;
 
-    FairSemaphore* MeshDataSemaphore;
+    TUniquePtr<FairSemaphore> MeshDataSemaphore;
 
-	FairSemaphore* SurfaceVoxelPointsSemaphore;
+	TUniquePtr<FairSemaphore> SurfaceVoxelPointsSemaphore;
     // 2D Array in a 1D Array representing the height of each surface voxel (not scaled to the chunk position in the world)
     // FIntPoint represents the tile of the chunk
     // TArray<int> represents a flatten 2D array of all the heights of each surface voxel in the chunk

@@ -2,20 +2,21 @@
 
 #pragma once
 
-#include <cstdint>
-#include <condition_variable> 
-#include <mutex> 
 #include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <mutex>
 
+#include "..\..\NPC\BasicNPC\BasicNPC.h"
+#include "..\..\Utils\CustomMesh\CustomProceduralMeshComponent.h"
 #include "..\..\Utils\Semaphore\FairSemaphore.h"
 #include "..\DataStructures\VoxelObjectLocationData.h"
 #include "..\DataStructures\VoxelObjectMeshData.h"
 #include "CoreMinimal.h"
-#include <Chunks/SingleChunk/BinaryChunk.h>
-#include "..\..\Utils\CustomMesh\CustomProceduralMeshComponent.h"
-#include <Chunks/Vegetation/Trees/Tree.h>
-#include "..\..\NPC\BasicNPC\BasicNPC.h"
+#include "Templates/UniquePtr.h"
 #include "WorldTerrainSettings.generated.h"
+#include <Chunks/SingleChunk/BinaryChunk.h>
+#include <Chunks/Vegetation/Trees/Tree.h>
 
 class FastNoiseLite;
 class APerlinNoiseSettings;
@@ -24,40 +25,40 @@ UCLASS()
 class UWorldTerrainSettings : public UObject {
 	GENERATED_BODY()
 
-public:
+  public:
 	UWorldTerrainSettings();
 
 	~UWorldTerrainSettings();
 
 	// Debug only parameters (showing collision is much slower)
-	const bool ShowChunkCollisionLOD{ false };
-	const bool ShowTreesCollisionLOD{ false };
-	const bool ShowNpcVisionSpheres{ false };
-	
-	const int NoiseSeed{ FMath::RandRange(1, 9999) }; // Default is 1337 (used mainly for testing)
-	//const int NoiseSeed{1337}; // Using the 1337 seed for testing. 
-	const uint8_t UnrealScale{ 60 }; // this changes the voxel size (100 is 1m) // 50 
-	const uint8_t DrawDistance{ 13 }; 
-    const uint8_t HalfUnrealScale{ static_cast<uint8_t>(UnrealScale / 2) }; // Used for aligning in the middle of a voxel
+	const bool ShowChunkCollisionLOD{false};
+	const bool ShowTreesCollisionLOD{false};
+	const bool ShowNpcVisionSpheres{false};
 
-	const uint8_t VegetationDrawDistance{ 3 }; // This is for smaller vegetation objects (grass/flowers)
-	const uint8_t TreeDrawDistance{ 5 };
-	const uint8_t NpcDrawDistance{ 2 };
+	const int NoiseSeed{FMath::RandRange(1, 9999)}; // Default is 1337 (used mainly for testing)
+	// const int NoiseSeed{1337}; // Using the 1337 seed for testing.
+	const uint8_t UnrealScale{60}; // this changes the voxel size (100 is 1m) // 50
+	const uint8_t DrawDistance{13};
+	const uint8_t HalfUnrealScale{static_cast<uint8_t>(UnrealScale / 2)}; // Used for aligning in the middle of a voxel
+
+	const uint8_t VegetationDrawDistance{3}; // This is for smaller vegetation objects (grass/flowers)
+	const uint8_t TreeDrawDistance{5};
+	const uint8_t NpcDrawDistance{2};
 
 	// Single chunk settings
-	const uint16_t chunkHeight{ 248 }; // 4 bits
-	const uint8_t chunkSize{ 62 }; // 62
-	const uint8_t chunkSizePadding{ 64 }; // 64
-	const uint8_t intsPerHeight{ static_cast<uint8_t>(chunkHeight / chunkSize) };
+	const uint16_t chunkHeight{248};    // 4 bits
+	const uint8_t chunkSize{62};        // 62
+	const uint8_t chunkSizePadding{64}; // 64
+	const uint8_t intsPerHeight{static_cast<uint8_t>(chunkHeight / chunkSize)};
 
-	std::chrono::duration<double, std::milli> chunkSpawnTime{ 0 };
+	std::chrono::duration<double, std::milli> chunkSpawnTime{0};
 	int chunksMeshCounter{0};
 
 	// World chunks settings
-	const int CollisionDistance{ chunkSize * UnrealScale * 2 };
+	const int CollisionDistance{chunkSize * UnrealScale * 2};
 
-	const int biomeWidth{ chunkSize * 5 }; // 10
-	const uint64_t blendBiomeThreshold{ 150 };
+	const int biomeWidth{chunkSize * 5}; // 10
+	const uint64_t blendBiomeThreshold{150};
 
 	void ValidateSpawnedChunksMap();
 
@@ -73,7 +74,7 @@ public:
 
 	void UpdateTreeCollisions(FVector& PlayerPosition);
 
-	FairSemaphore* UpdateChunkSemaphore;
+	TUniquePtr<FairSemaphore> UpdateChunkSemaphore;
 
 	// Player positions (used to despawn objects and for pathfinding)
 	void UpdateInitialPlayerPosition(FVector newPosition);
@@ -95,20 +96,18 @@ public:
 	TObjectPtr<FastNoiseLite> peaksAndValleysDW;
 	TObjectPtr<FastNoiseLite> npcNoiseDW;
 
-
 	void SetPerlinNoiseSettings(APerlinNoiseSettings* InPerlinNoiseSettings);
 
 	void ApplyDomainWarpToCoords(float& noisePositionX, float& noisePositionZ, TObjectPtr<FastNoiseLite> noise);
 
 	float GetNoiseAtCoords(float& noisePositionX, float& noisePositionZ, TObjectPtr<FastNoiseLite> noise);
 
-	bool isActorPresentInMap(AActor* actor); // TODO REMOVE AFTER TESTING - USING THIS BEFORE DESTROY() 
+	bool isActorPresentInMap(AActor* actor); // TODO REMOVE AFTER TESTING - USING THIS BEFORE DESTROY()
 
 	void printMapElements(FString message); // TODO SHOULD MADE PRIVATE AFTER TESTING
 
 	TArray<FColor> ChunkColorArray = {
-		FColor(45, 41, 32), FColor(48, 44, 35), FColor(79, 69, 55), FColor(105, 87, 59), FColor(143, 118, 80), FColor(113, 125, 73), FColor(109, 120, 67), FColor(98, 110, 59), FColor(88, 99, 49), FColor(78, 89, 39), FColor(53, 60, 29), FColor(41, 48, 25), FColor(36, 43, 20), FColor(63, 63, 63), FColor(73, 73, 73), FColor(89, 89, 89), FColor(99, 99, 94), FColor(140, 140, 140), FColor(230, 225, 210), FColor(255, 251, 233)
-	};
+	    FColor(45, 41, 32), FColor(48, 44, 35), FColor(79, 69, 55), FColor(105, 87, 59), FColor(143, 118, 80), FColor(113, 125, 73), FColor(109, 120, 67), FColor(98, 110, 59), FColor(88, 99, 49), FColor(78, 89, 39), FColor(53, 60, 29), FColor(41, 48, 25), FColor(36, 43, 20), FColor(63, 63, 63), FColor(73, 73, 73), FColor(89, 89, 89), FColor(99, 99, 94), FColor(140, 140, 140), FColor(230, 225, 210), FColor(255, 251, 233)};
 
 	const int GrassColorStartIndex = 5;
 	const int GrassColorEndIndex = 12;
@@ -116,83 +115,79 @@ public:
 	const int ColorLayers = 20;
 
 	TArray<FColor> TreeTrunkColorArray = {
-		FColor(54, 28, 23), FColor(58, 30, 24), FColor(61, 32, 26), FColor(65, 34, 27), FColor(68, 36, 29), FColor(72, 38, 30), FColor(76, 40, 32), FColor(79, 42, 33), FColor(83, 43, 35), FColor(86, 45, 36)
-	};
+	    FColor(54, 28, 23), FColor(58, 30, 24), FColor(61, 32, 26), FColor(65, 34, 27), FColor(68, 36, 29), FColor(72, 38, 30), FColor(76, 40, 32), FColor(79, 42, 33), FColor(83, 43, 35), FColor(86, 45, 36)};
 
 	TArray<FColor> TreeCrownColorArray = {
-		FColor(30, 72, 65), FColor(22, 80, 77), FColor(15, 81, 87), FColor(20, 89, 103), FColor(25, 95, 118), FColor(43, 102, 136), FColor(65, 107, 149), FColor(80, 100, 165), FColor(106, 104, 177), FColor(135, 101, 174), FColor(151, 103, 173), FColor(167, 103, 173)
-	};
+	    FColor(30, 72, 65), FColor(22, 80, 77), FColor(15, 81, 87), FColor(20, 89, 103), FColor(25, 95, 118), FColor(43, 102, 136), FColor(65, 107, 149), FColor(80, 100, 165), FColor(106, 104, 177), FColor(135, 101, 174), FColor(151, 103, 173), FColor(167, 103, 173)};
 
 	// Vegetation settings
-	const int VegetationCollisionDistance{ chunkSize * UnrealScale };
-	const float TreeSpawnChance{ 0.0014f };
-	const float FlowerSpawnChance{ 0.03f };	
-	const float GrassSpawnChance{ 0.075f };	
-	const float NPCSpawnChance{ 0.077f };	
+	const int VegetationCollisionDistance{chunkSize * UnrealScale};
+	const float TreeSpawnChance{0.0014f};
+	const float FlowerSpawnChance{0.03f};
+	const float GrassSpawnChance{0.075f};
+	const float NPCSpawnChance{0.077f};
 
 	// Shadow settings
-	const bool GrassShadow{ true };
-	const bool FlowerShadow{ true };
-	const bool TreeShadow{ true };
-	const bool NpcShadow{ true };
-	const bool ChunkShadow{ true };
+	const bool GrassShadow{true};
+	const bool FlowerShadow{true};
+	const bool TreeShadow{true};
+	const bool NpcShadow{true};
+	const bool ChunkShadow{true};
 
 	// Trees settings
-	const uint8_t TreeVariations{ 30 };
-	const int TreeSpawnRadius{ DrawDistance / 2};
-	const int TreeChunkRadius{ UnrealScale * TreeSpawnRadius * chunkSizePadding };
-	int TreeCount{ 0 };
-	const uint8_t TreeScale{ 15 };
-	const float HalfTreeScale{ static_cast<float>(TreeScale) / 2.0f }; // Used for aligning in the middle of a voxel
-	const uint8_t TreeCountMax{ 40 };
-	const uint16_t TreeHeight{ 60 }; // 5 bits
-	const uint8_t TreeSize{ 30 }; 
-	const uint8_t TreeSizePadding{ 32 }; 
-	const uint8_t TreeIntsPerHeight{ static_cast<uint8_t>(TreeHeight / TreeSize) };
-	const uint16_t MaxTreeTrunkWidth{ 2 };
-	const uint16_t MinTreeTrunkWidth{ 1 };
+	const uint8_t TreeVariations{30};
+	const int TreeSpawnRadius{DrawDistance / 2};
+	const int TreeChunkRadius{UnrealScale * TreeSpawnRadius * chunkSizePadding};
+	int TreeCount{0};
+	const uint8_t TreeScale{15};
+	const float HalfTreeScale{static_cast<float>(TreeScale) / 2.0f}; // Used for aligning in the middle of a voxel
+	const uint8_t TreeCountMax{40};
+	const uint16_t TreeHeight{60}; // 5 bits
+	const uint8_t TreeSize{30};
+	const uint8_t TreeSizePadding{32};
+	const uint8_t TreeIntsPerHeight{static_cast<uint8_t>(TreeHeight / TreeSize)};
+	const uint16_t MaxTreeTrunkWidth{2};
+	const uint16_t MinTreeTrunkWidth{1};
 
 	// Flowers settings
-	int FlowerCount{ 0 };
-	const uint8_t FlowerVariations{ 40 };
-	const uint8_t FlowerScale{ 7 };
-	const float HalfFlowerScale{ static_cast<float>(FlowerScale) / 2.0f }; // Used for aligning in the middle of a voxel
-	const uint8_t FlowerSizePadding{ 16 };
-	const uint8_t FlowerSize{ 14 };
-	const int MaxFlowerSphere{ 2 };
-	const uint16_t FlowerHeight{ 14 }; // 1 bits
-	const uint8_t FlowerIntsPerHeight{ static_cast<uint8_t>(FlowerHeight / FlowerSize) };
+	int FlowerCount{0};
+	const uint8_t FlowerVariations{40};
+	const uint8_t FlowerScale{7};
+	const float HalfFlowerScale{static_cast<float>(FlowerScale) / 2.0f}; // Used for aligning in the middle of a voxel
+	const uint8_t FlowerSizePadding{16};
+	const uint8_t FlowerSize{14};
+	const int MaxFlowerSphere{2};
+	const uint16_t FlowerHeight{14}; // 1 bits
+	const uint8_t FlowerIntsPerHeight{static_cast<uint8_t>(FlowerHeight / FlowerSize)};
 
 	TArray<FColor> FlowerStemColorArray = {
-		FColor(98, 117, 67), FColor(84, 108, 61), FColor(71, 99, 54), FColor(58, 90, 48), FColor(46, 80, 42)
-	};
+	    FColor(98, 117, 67), FColor(84, 108, 61), FColor(71, 99, 54), FColor(58, 90, 48), FColor(46, 80, 42)};
 
 	TArray<FColor> FlowerPetalColorArray = {
-		FColor(74, 86, 125), FColor(74, 80, 130), FColor(77, 75, 134),
-		FColor(86, 76, 138), FColor(96, 77, 143), FColor(108, 77, 147),
-		FColor(120, 78, 151), FColor(133, 79, 156), FColor(147, 79, 161),
-		FColor(162, 80, 165), FColor(170, 80, 161), FColor(175, 80, 153),
-		FColor(178, 83, 143), FColor(180, 85, 133), FColor(183, 87, 122),
-		FColor(186, 90, 112), FColor(188, 92, 102), FColor(191, 96, 95),
-		FColor(194, 112, 100)
-	};
+	    FColor(74, 86, 125), FColor(74, 80, 130), FColor(77, 75, 134),
+	    FColor(86, 76, 138), FColor(96, 77, 143), FColor(108, 77, 147),
+	    FColor(120, 78, 151), FColor(133, 79, 156), FColor(147, 79, 161),
+	    FColor(162, 80, 165), FColor(170, 80, 161), FColor(175, 80, 153),
+	    FColor(178, 83, 143), FColor(180, 85, 133), FColor(183, 87, 122),
+	    FColor(186, 90, 112), FColor(188, 92, 102), FColor(191, 96, 95),
+	    FColor(194, 112, 100)};
 
 	// Grass settings
-	int GrassCount{ 0 };
-	const uint8_t GrassVariations{ 40 };
-	const uint8_t GrassScale{ 7 };
-	const float HalfGrassScale{ static_cast<float>(GrassScale) / 2.0f }; // Used for aligning in the middle of a voxel
-	const uint8_t GrassSizePadding{ 16 };
-	const uint8_t GrassSize{ 14 };
-	const uint16_t GrassHeight{ 14 }; // 2 bits
-	const uint8_t GrassIntsPerHeight{ static_cast<uint8_t>(GrassHeight / GrassSize) };
+	int GrassCount{0};
+	const uint8_t GrassVariations{40};
+	const uint8_t GrassScale{7};
+	const float HalfGrassScale{static_cast<float>(GrassScale) / 2.0f}; // Used for aligning in the middle of a voxel
+	const uint8_t GrassSizePadding{16};
+	const uint8_t GrassSize{14};
+	const uint16_t GrassHeight{14}; // 2 bits
+	const uint8_t GrassIntsPerHeight{static_cast<uint8_t>(GrassHeight / GrassSize)};
 
-	TArray<FColor> GrassBladesColorArray = { FColor(98, 117, 67), FColor(84, 108, 61), FColor(71, 99, 54), FColor(58, 90, 48), FColor(46, 80, 42) };
+	TArray<FColor> GrassBladesColorArray = {FColor(98, 117, 67), FColor(84, 108, 61), FColor(71, 99, 54), FColor(58, 90, 48), FColor(46, 80, 42)};
 
-	int NPCCount{ 0 };
+	int NPCCount{0};
 
 	// TODO I might want to move this to VegetationMeshData.cpp eventually
-	// Vegetation interacting methods 
+	// Vegetation interacting methods
 	void AddTreeMeshData(FVoxelObjectMeshData treeData);
 	void AddGrassMeshData(FVoxelObjectMeshData grassData);
 	void AddFlowerMeshData(FVoxelObjectMeshData flowerData);
@@ -231,7 +226,7 @@ public:
 	ABinaryChunk* GetChunkToEnableCollision();
 	ATree* GetTreeToEnableCollision();
 
-private:
+  private:
 	APerlinNoiseSettings* PerlinNoiseSettingsRef;
 	APerlinNoiseSettings*& PNSR = PerlinNoiseSettingsRef;
 
@@ -240,7 +235,7 @@ private:
 	void CheckIfActorIsNullOrPendingKill();
 	void CheckForDuplicateWorldCoordinates();
 
-	// Vegetation mesh data 
+	// Vegetation mesh data
 	TArray<FVoxelObjectMeshData> TreesMeshData;
 	TArray<FVoxelObjectMeshData> GrassMeshData;
 	TArray<FVoxelObjectMeshData> FlowersMeshData;
@@ -250,17 +245,17 @@ private:
 	FVector playerCurrentPosition; // This is used for pathfinding and updated in ChunkWorld
 
 	// Locks for critical sections
-	FairSemaphore* PlayerPositionSemaphore;
-	FairSemaphore* ChunkMapSemaphore;
-	FairSemaphore* TreeMapSemaphore;
-	FairSemaphore* GrassMapSemaphore;
-	FairSemaphore* FlowerMapSemaphore;
-	FairSemaphore* NpcMapSemaphore;
-	FairSemaphore* DrawDistanceSemaphore;
-	FairSemaphore* AddCollisionTreesSemaphore;
-	FairSemaphore* RemoveCollisionTreesSemaphore;
-	FairSemaphore* AddCollisionChunksSemaphore;
-	FairSemaphore* RemoveCollisionChunksSemaphore;
+	TUniquePtr<FairSemaphore> PlayerPositionSemaphore;
+	TUniquePtr<FairSemaphore> ChunkMapSemaphore;
+	TUniquePtr<FairSemaphore> TreeMapSemaphore;
+	TUniquePtr<FairSemaphore> GrassMapSemaphore;
+	TUniquePtr<FairSemaphore> FlowerMapSemaphore;
+	TUniquePtr<FairSemaphore> NpcMapSemaphore;
+	TUniquePtr<FairSemaphore> DrawDistanceSemaphore;
+	TUniquePtr<FairSemaphore> AddCollisionTreesSemaphore;
+	TUniquePtr<FairSemaphore> RemoveCollisionTreesSemaphore;
+	TUniquePtr<FairSemaphore> AddCollisionChunksSemaphore;
+	TUniquePtr<FairSemaphore> RemoveCollisionChunksSemaphore;
 
 	// Map to store spawned chunks with 2D coordinates as keys
 	TMap<FIntPoint, AActor*> SpawnedChunksMap;
@@ -284,6 +279,4 @@ private:
 	void initializeDomainWarpNoise(TObjectPtr<FastNoiseLite>& domainWarp);
 
 	void applyDomainWarpSettings(TObjectPtr<FastNoiseLite>& domainWarp, const int& settingsIndex);
-
 };
-

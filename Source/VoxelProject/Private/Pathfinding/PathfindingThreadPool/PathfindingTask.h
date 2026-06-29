@@ -2,11 +2,11 @@
 
 #pragma once
 
+#include "..\SearchProblem\VoxelSearchProblem.h"
 #include "Async/Async.h"
 #include "CoreMinimal.h"
-#include "..\..\NPC\BasicNPC\BasicNPC.h"
-#include "PathfindingThreadManager.h"
-#include "..\SearchProblem\VoxelSearchProblem.h"
+#include "Templates/UniquePtr.h"
+#include "UObject/WeakObjectPtrTemplates.h"
 
 class ABasicNPC;
 class VoxelSearchProblem;
@@ -14,42 +14,41 @@ class UWorldTerrainSettings;
 class UChunkLocationData;
 
 class FPathfindingTask : public IQueuedWork {
-public:
+  public:
 	FPathfindingTask(
-		const FVector& InStartLocation, 
-		const FVector& InEndLocation,
-		ABasicNPC* InNPCRef,
-		UWorldTerrainSettings* InWorldTerrainSettingsRef, 
-		UChunkLocationData* InChunkLocationDataRef
-		);
+	    const FVector& InStartLocation,
+	    const FVector& InEndLocation,
+	    ABasicNPC* InNPCRef,
+	    UWorldTerrainSettings* InWorldTerrainSettingsRef,
+	    UChunkLocationData* InChunkLocationDataRef
+	);
 
 	virtual ~FPathfindingTask();
 
 	virtual void DoThreadedWork() override;
 	virtual void Abandon() override;
 
-
 	void SetWorldTerrainSettings(UWorldTerrainSettings* InWorldTerrainSettings);
 	void SetChunkLocationData(UChunkLocationData* InChunkLocationData);
 
-private:
+  private:
 	void AdjustLocationsToUnrealScaling();
-	Path* GetPathToEndLocation();
-	void AdjustPathWithActualVoxelHeights(Path* path);
+	TUniquePtr<Path> GetPathToEndLocation();
+	void AdjustPathWithActualVoxelHeights(Path& PathToAdjust);
+	void DispatchPathToGameThread(TUniquePtr<Path> PathToTarget);
 
 	void PrintHeights(const TArray<int>& heights); // TESTING THE SURFACE VOXELS
 
-	UWorldTerrainSettings* WorldTerrainSettingsRef;
-	UWorldTerrainSettings*& WTSR = WorldTerrainSettingsRef;
+	TWeakObjectPtr<UWorldTerrainSettings> WorldTerrainSettingsRef;
 
-	UChunkLocationData* ChunkLocationDataRef;
-	UChunkLocationData*& CLDR = ChunkLocationDataRef;
+	TWeakObjectPtr<UChunkLocationData> ChunkLocationDataRef;
 
-	ABasicNPC* NPCRef;
+	TWeakObjectPtr<ABasicNPC> NPCRef;
 
 	FVector StartLocation;
 	FVector EndLocation;
 
-	VoxelSearchProblem* searchProblem;
-	bool isSearching;
+	TUniquePtr<VoxelSearchProblem> SearchProblem;
+	FCriticalSection SearchProblemCriticalSection;
+	FThreadSafeBool bIsSearching;
 };

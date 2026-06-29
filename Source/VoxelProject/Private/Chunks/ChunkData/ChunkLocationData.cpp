@@ -3,32 +3,20 @@
 #include "..\TerrainSettings\WorldTerrainSettings.h"
 
 UChunkLocationData::UChunkLocationData() :
-	ChunksToSpawnSemaphore(new FairSemaphore(1)),
-	ChunksToDestroySemaphore(new FairSemaphore(1)),
-	MeshDataSemaphore(new FairSemaphore(1)),
-	GrassToSpawnSemaphore(new FairSemaphore(1)),
-	FlowersToSpawnSemaphore(new FairSemaphore(1)),
-	NPCToSpawnSemaphore(new FairSemaphore(1)),
-	TreesToSpawnSemaphore(new FairSemaphore(1)),
-	VegetationChunkSemaphore(new FairSemaphore(1)),
-	TreeChunkSemaphore(new FairSemaphore(1)),
-	NpcChunkSemaphore(new FairSemaphore(1)),
-	SurfaceVoxelPointsSemaphore(new FairSemaphore(1)) {
+	ChunksToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
+	ChunksToDestroySemaphore(MakeUnique<FairSemaphore>(1)),
+	TreesToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
+	GrassToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
+	FlowersToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
+	NPCToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
+	VegetationChunkSemaphore(MakeUnique<FairSemaphore>(1)),
+	TreeChunkSemaphore(MakeUnique<FairSemaphore>(1)),
+	NpcChunkSemaphore(MakeUnique<FairSemaphore>(1)),
+	MeshDataSemaphore(MakeUnique<FairSemaphore>(1)),
+	SurfaceVoxelPointsSemaphore(MakeUnique<FairSemaphore>(1)) {
 }
 
 UChunkLocationData::~UChunkLocationData() {
-	// Clean up the semaphores
-	delete ChunksToSpawnSemaphore;
-	delete ChunksToDestroySemaphore;
-	delete MeshDataSemaphore;
-	delete TreesToSpawnSemaphore;
-	delete FlowersToSpawnSemaphore;
-	delete GrassToSpawnSemaphore;
-	delete NPCToSpawnSemaphore;
-	delete SurfaceVoxelPointsSemaphore;
-	delete VegetationChunkSemaphore;
-	delete TreeChunkSemaphore;
-	delete NpcChunkSemaphore;
 }
 
 void UChunkLocationData::SetWorldTerrainSettings(UWorldTerrainSettings* InWorldTerrainSettings) {
