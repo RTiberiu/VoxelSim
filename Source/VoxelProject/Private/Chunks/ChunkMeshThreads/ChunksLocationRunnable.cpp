@@ -15,13 +15,13 @@ ChunksLocationRunnable::ChunksLocationRunnable(
 	TQueue<ATree*>* InTreeActorsToRemove,
 	TQueue<ABasicNPC*>* InNpcActorsToRemove
 ) : 
-	PlayerPosition(PlayerPosition), 
-	isRunning(false), 
-	isTaskComplete(false),
 	GrassActorsToRemove(InGrassActorsToRemove),
 	FlowerActorsToRemove(InFlowerActorsToRemove),
 	TreeActorsToRemove(InTreeActorsToRemove),
-	NpcActorsToRemove(InNpcActorsToRemove)
+	NpcActorsToRemove(InNpcActorsToRemove),
+	PlayerPosition(PlayerPosition), 
+	isRunning(false), 
+	isTaskComplete(false)
 {
 	WorldTerrainSettingsRef = InWorldTerrainSettingsRef;
 	ChunkLocationDataRef = InChunkLocationDataRef;
@@ -80,7 +80,7 @@ void ChunksLocationRunnable::UpdateSpawnPoints(SpawnPointType SpawnType) {
 	FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
 	FIntPoint InitialChunkCoords = GetChunkCoordinates(WTSR->getInitialPlayerPosition());
 
-	uint8_t DrawDistance;
+	uint8_t DrawDistance = 0;
 	if (SpawnType == CHUNKS) {
 		DrawDistance = WTSR->DrawDistance;
 	} else if (SpawnType == VEGETATION) {
@@ -89,6 +89,10 @@ void ChunksLocationRunnable::UpdateSpawnPoints(SpawnPointType SpawnType) {
 		DrawDistance = WTSR->TreeDrawDistance;
 	} else if (SpawnType == NPCS) {
 		DrawDistance = WTSR->NpcDrawDistance;
+	}
+
+	if (DrawDistance == 0) {
+		return;
 	}
 
 	// Add and remove chunks on the X axis 

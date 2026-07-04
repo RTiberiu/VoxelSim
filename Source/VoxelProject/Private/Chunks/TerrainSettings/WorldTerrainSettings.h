@@ -34,6 +34,7 @@ class UWorldTerrainSettings : public UObject {
 	const bool ShowChunkCollisionLOD{false};
 	const bool ShowTreesCollisionLOD{false};
 	const bool ShowNpcVisionSpheres{false};
+	const bool bValidateSpawnedChunksOnMutation{false};
 
 	const int NoiseSeed{FMath::RandRange(1, 9999)}; // Default is 1337 (used mainly for testing)
 	// const int NoiseSeed{1337}; // Using the 1337 seed for testing.
@@ -212,10 +213,10 @@ class UWorldTerrainSettings : public UObject {
 	TArray<ABasicNPC*> GetAndRemoveNpcFromMap(const FIntPoint& npcWorldCoordinates);
 	void RemoveTreeFromMap(const FIntPoint& TreeWorldCoordinates);
 
-	void CheckAndReturnGrassNotInRange(TArray<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove);
-	void CheckAndReturnFlowersNotInRange(TArray<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove);
-	void CheckAndReturnTreesNotInRange(TArray<FIntPoint>& coordinates, TQueue<ATree*>* TreeActorsToRemove);
-	void CheckAndReturnNpcsNotInRange(TArray<FIntPoint>& coordinates, TQueue<ABasicNPC*>* NpcActorsToRemove);
+	void CheckAndReturnGrassNotInRange(const TSet<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove);
+	void CheckAndReturnFlowersNotInRange(const TSet<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove);
+	void CheckAndReturnTreesNotInRange(const TSet<FIntPoint>& coordinates, TQueue<ATree*>* TreeActorsToRemove);
+	void CheckAndReturnNpcsNotInRange(const TSet<FIntPoint>& coordinates, TQueue<ABasicNPC*>* NpcActorsToRemove);
 
 	// Remove single objects, usually used by NPCs when eating/killing them
 	void RemoveSingleGrassFromMap(UCustomProceduralMeshComponent* grass);

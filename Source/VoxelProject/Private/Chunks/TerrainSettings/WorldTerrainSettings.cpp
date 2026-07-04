@@ -30,20 +30,28 @@ UWorldTerrainSettings::~UWorldTerrainSettings() {
 
 void UWorldTerrainSettings::AddChunkToMap(const FIntPoint& ChunkCoordinates, AActor* ChunkActor) {
 	ChunkMapSemaphore->Acquire();
-	ValidateSpawnedChunksMap(); // TESTING
+	if (bValidateSpawnedChunksOnMutation) {
+		ValidateSpawnedChunksMap();
+	}
 	SpawnedChunksMap.Add(ChunkCoordinates, ChunkActor);
-	ValidateSpawnedChunksMap(); // TESTING
+	if (bValidateSpawnedChunksOnMutation) {
+		ValidateSpawnedChunksMap();
+	}
 	ChunkMapSemaphore->Release();
 }
 
 AActor* UWorldTerrainSettings::GetAndRemoveChunkFromMap(const FIntPoint& ChunkCoordinates) {
 	ChunkMapSemaphore->Acquire();
-	ValidateSpawnedChunksMap(); // TESTING
+	if (bValidateSpawnedChunksOnMutation) {
+		ValidateSpawnedChunksMap();
+	}
 	AActor* RemovedChunk = nullptr;
 	if (SpawnedChunksMap.Contains(ChunkCoordinates)) {
 		RemovedChunk = SpawnedChunksMap.FindAndRemoveChecked(ChunkCoordinates);
 	}
-	ValidateSpawnedChunksMap(); // TESTING
+	if (bValidateSpawnedChunksOnMutation) {
+		ValidateSpawnedChunksMap();
+	}
 	ChunkMapSemaphore->Release();
 	return RemovedChunk;
 }
@@ -397,7 +405,7 @@ void UWorldTerrainSettings::RemoveTreeFromMap(const FIntPoint& TreeWorldCoordina
 	TreeMapSemaphore->Release();
 }
 
-void UWorldTerrainSettings::CheckAndReturnGrassNotInRange(TArray<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove) {
+void UWorldTerrainSettings::CheckAndReturnGrassNotInRange(const TSet<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* GrassActorsToRemove) {
 	GrassMapSemaphore->Acquire();
 
 	// Iterate over the keys of SpawnedGrassMap
@@ -419,7 +427,7 @@ void UWorldTerrainSettings::CheckAndReturnGrassNotInRange(TArray<FIntPoint>& coo
 	GrassMapSemaphore->Release();
 }
 
-void UWorldTerrainSettings::CheckAndReturnFlowersNotInRange(TArray<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove) {
+void UWorldTerrainSettings::CheckAndReturnFlowersNotInRange(const TSet<FIntPoint>& coordinates, TQueue<UCustomProceduralMeshComponent*>* FlowerActorsToRemove) {
 	FlowerMapSemaphore->Acquire();
 
 	// Iterate over the keys of SpawnedFlowerMap
@@ -441,7 +449,7 @@ void UWorldTerrainSettings::CheckAndReturnFlowersNotInRange(TArray<FIntPoint>& c
 	FlowerMapSemaphore->Release();
 }
 
-void UWorldTerrainSettings::CheckAndReturnTreesNotInRange(TArray<FIntPoint>& coordinates, TQueue<ATree*>* TreeActorsToRemove) {
+void UWorldTerrainSettings::CheckAndReturnTreesNotInRange(const TSet<FIntPoint>& coordinates, TQueue<ATree*>* TreeActorsToRemove) {
 	TreeMapSemaphore->Acquire();
 
 	// Iterate over the keys of SpawnedTreesMap
@@ -462,7 +470,7 @@ void UWorldTerrainSettings::CheckAndReturnTreesNotInRange(TArray<FIntPoint>& coo
 	TreeMapSemaphore->Release();
 }
 
-void UWorldTerrainSettings::CheckAndReturnNpcsNotInRange(TArray<FIntPoint>& coordinates, TQueue<ABasicNPC*>* NpcActorsToRemove) {
+void UWorldTerrainSettings::CheckAndReturnNpcsNotInRange(const TSet<FIntPoint>& coordinates, TQueue<ABasicNPC*>* NpcActorsToRemove) {
 	NpcMapSemaphore->Acquire();
 
 	// Iterate over the keys of SpawnedNpcMap

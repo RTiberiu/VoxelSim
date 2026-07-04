@@ -6,11 +6,11 @@
 #include "..\DataStructures\VoxelObjectLocationData.h"
 #include "..\DataStructures\VoxelObjectMeshData.h"
 #include "..\Vegetation\Trees\Tree.h"
+#include "ChunkLocationData.generated.h"
 #include "Containers/Queue.h"
 #include "CoreMinimal.h"
 #include "Misc/ScopeLock.h"
 #include "Templates/UniquePtr.h"
-#include "ChunkLocationData.generated.h"
 
 class ABasicNPC;
 class WorldTerrainSettings;
@@ -39,9 +39,10 @@ class UChunkLocationData : public UObject {
 	bool getChunkToSpawnPosition(FVoxelObjectLocationData& OutLocation);
 	bool getChunkToDestroyPosition(FIntPoint& OutPosition);
 
-	bool getComputedMeshDataAndLocationData(FVoxelObjectLocationData& locationData, FVoxelObjectMeshData& meshData);
+	bool getComputedMeshDataAndLocationData(FVoxelObjectLocationData& locationData, FVoxelObjectMeshData& meshData, const FIntPoint& PriorityChunkPosition);
 	bool isMeshWaitingToBeSpawned();
 
+	bool IsChunkSpawnRequested(const FIntPoint& chunkPosition) const;
 	void AddChunksToSpawnPosition(const FVoxelObjectLocationData position);
 	void AddChunksToDestroyPosition(const FIntPoint& position);
 	void AddMeshDataForPosition(const FVoxelObjectLocationData chunkLocationData, const FVoxelObjectMeshData meshData);
@@ -74,10 +75,10 @@ class UChunkLocationData : public UObject {
 	TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPosition();
 	TSet<FIntPoint> GetNpcChunkSpawnPoints() const;
 
-	TArray<FVoxelObjectLocationData> getTreeSpawnPositionsInRange();
-	TArray<FVoxelObjectLocationData> getGrassSpawnPositionInRange();
-	TArray<FVoxelObjectLocationData> getFlowerSpawnPositionInRange();
-	TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPositionInRange();
+	TArray<FVoxelObjectLocationData> getTreeSpawnPositionsInRange(const FIntPoint& PriorityChunkPosition);
+	TArray<FVoxelObjectLocationData> getGrassSpawnPositionInRange(const FIntPoint& PriorityChunkPosition);
+	TArray<FVoxelObjectLocationData> getFlowerSpawnPositionInRange(const FIntPoint& PriorityChunkPosition);
+	TArray<TPair<FVoxelObjectLocationData, AnimalType>> getNPCSpawnPositionInRange(const FIntPoint& PriorityChunkPosition);
 
 	// Methods to add single spawn points for vegetation and NPCs
 	void addTreeSpawnPosition(const FVoxelObjectLocationData position);
@@ -126,13 +127,15 @@ class UChunkLocationData : public UObject {
 
 	const int chunkSize{62};
 
+	// Tracking chunks that should exist after streaming finishes
+	TSet<FIntPoint> RequestedChunkSpawnPositions;
+	TUniquePtr<FairSemaphore> ChunkStreamingSemaphore;
+
 	// Queue for storing chunks position that need to be spawned
 	TQueue<FVoxelObjectLocationData> chunksToSpawnPositions;
-	TUniquePtr<FairSemaphore> ChunksToSpawnSemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
 
 	// Queue for storing chunks position that need to be destroyed
 	TQueue<FIntPoint> chunksToDestroyPositions;
-	TUniquePtr<FairSemaphore> ChunksToDestroySemaphore; // TODO might not be needed in a producer-consumer pattern, since TQueue is thread-safe
 
 	TQueue<ATree*> unspawnedTreesToDestroy;
 	TQueue<UProceduralMeshComponent*> unspawnedGrassToDestroy;
@@ -145,7 +148,7 @@ class UChunkLocationData : public UObject {
 	TQueue<FIntPoint> npcsToDestroy;
 
 	// Queue for storing chunks mesh data
-	TQueue<FChunkMeshBuildResult> ComputedMeshResults;
+	TArray<FChunkMeshBuildResult> ComputedMeshResults;
 
 	// Queue for storing all vegetation spawn points data (even outside of the LOD range)
 	TUniquePtr<FairSemaphore> TreesToSpawnSemaphore;

@@ -29,6 +29,11 @@ bool ChunkMeshDataRunnable::Init() {
 
 uint32 ChunkMeshDataRunnable::Run() {
 	while (isRunning) {
+		if (!CLDR->IsChunkSpawnRequested(ChunkLocationData.ObjectWorldCoords)) {
+			isTaskComplete.AtomicSet(true);
+			isRunning.AtomicSet(false);
+			return 0;
+		}
 
 		PendingTreeSpawns.Empty();
 		PendingFlowerSpawns.Empty();
@@ -39,8 +44,22 @@ uint32 ChunkMeshDataRunnable::Run() {
 		Time start = std::chrono::high_resolution_clock::now();
 
 		GenerateTerrainPatch();
+
+		if (!CLDR->IsChunkSpawnRequested(ChunkLocationData.ObjectWorldCoords)) {
+			isTaskComplete.AtomicSet(true);
+			isRunning.AtomicSet(false);
+			return 0;
+		}
+
 		CreateBinarySolidColumnsYXZ(TerrainPatch);
 		CreateTerrainMeshesData();
+
+		if (!CLDR->IsChunkSpawnRequested(ChunkLocationData.ObjectWorldCoords)) {
+			isTaskComplete.AtomicSet(true);
+			isRunning.AtomicSet(false);
+			return 0;
+		}
+
 		AddSpawnLocationsForTerrainPatch(TerrainPatch);
 
 		Time end = std::chrono::high_resolution_clock::now();

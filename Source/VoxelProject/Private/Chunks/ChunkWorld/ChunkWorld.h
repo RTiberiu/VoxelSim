@@ -4,13 +4,12 @@
 
 #include "..\..\NPC\StatsNPC\StatsVoxelsMeshNPC.h"
 #include "..\ChunkData\ChunkLocationData.h"
-#include "..\ChunkMeshThreads\ChunkMeshDataRunnable.h"
-#include "..\ChunkMeshThreads\ChunksLocationRunnable.h"
 #include "..\SingleChunk\BinaryChunk.h"
 #include "..\Vegetation\Flowers\FlowerMeshGenerator.h"
 #include "..\Vegetation\Grass\GrassMeshGenerator.h"
 #include "..\Vegetation\Trees\Tree.h"
 #include "..\Vegetation\Trees\TreeMeshGenerator.h"
+#include "ChunkGenerationTaskManager.h"
 
 #include "..\..\NPC\SettingsNPC\AnimationSettingsNPC.h"
 
@@ -30,6 +29,7 @@ class ABinaryChunk;
 class WorldTerrainSettings; // forward declaration to the world settings
 class UChunkLocationData;
 class APerlinNoiseSettings;
+class UMaterialInterface;
 
 UCLASS()
 class AChunkWorld : public AActor {
@@ -84,14 +84,7 @@ class AChunkWorld : public AActor {
 	void generateGrassMeshVariations();
 	void generateFlowerMeshVariations();
 
-	// Runnable to handle spawning the chunks
-	TUniquePtr<ChunksLocationRunnable> chunksLocationRunnable;
-	TUniquePtr<FRunnableThread> chunksLocationThread;
-	FThreadSafeBool isLocationTaskRunning;
-
-	TUniquePtr<ChunkMeshDataRunnable> chunkMeshDataRunnable;
-	TUniquePtr<FRunnableThread> chunkMeshDataThread;
-	FThreadSafeBool isMeshTaskRunning;
+	FChunkGenerationTaskManager GenerationTaskManager;
 
 	// Handle logic after the terrain is generated
 	void onNewTerrainGenerated();
@@ -112,9 +105,13 @@ class AChunkWorld : public AActor {
 	void SpawnGrass(FVoxelObjectLocationData LocationData);
 	void SpawnFlower(FVoxelObjectLocationData LocationData);
 	void SpawnNPC(TPair<FVoxelObjectLocationData, AnimalType> LocationAndType);
+	void CacheVoxelBasicMaterial();
 
 	// NPC Settings
 	TSubclassOf<AActor> NPC;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> VoxelBasicMaterial;
 
 	// Helper methods to remove vegetation spawn points and destroy actors
 	void RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyPosition);
@@ -124,16 +121,26 @@ class AChunkWorld : public AActor {
 	void DestroyNpcActors();
 
 	// Helper functions to handle spawn positions and spawn objects over multiple frames (used in Tick())
-	void SpawnMultipleGrassObjects();
-	void SpawnMultipleFlowerObjects();
-	void SpawnMultipleNpcObjects();
+	void SpawnMultipleGrassObjects(const FVector& PlayerPosition);
+	void SpawnMultipleFlowerObjects(const FVector& PlayerPosition);
+	void SpawnMultipleNpcObjects(const FVector& PlayerPosition);
 	void SpawnMultipleTreeObjects(const FVector& PlayerPosition);
+	void TrimCachedSpawnPositions();
 
 	void UpdateChunksCollision();
 	void UpdateTreesCollision();
 
 	void SpawnSingleChunk(const FVector& PlayerPosition);
 	void DestroySingleChunk();
+
+	void LogChunkMeshComputeTime();
+	bool CanRunWorldTick() const;
+	void HandlePerlinNoiseSettingsChanged();
+	void UpdatePlayerChunkStreaming(const FVector& PlayerPosition);
+	void ProcessGenerationJobs();
+	void ProcessChunkLifecycle(const FVector& PlayerPosition);
+	void RefreshSpawnPointRanges();
+	void ProcessVegetationAndNpcSpawning(const FVector& PlayerPosition);
 
 	// Tree actors to be destroyed and settings
 	TQueue<ATree*> TreeActorsToRemove;

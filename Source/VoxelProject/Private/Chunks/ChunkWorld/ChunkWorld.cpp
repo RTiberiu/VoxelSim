@@ -8,14 +8,31 @@
 #include "..\TerrainSettings\WorldTerrainSettings.h"
 #include "GameFramework/DefaultPawn.h"
 #include "GameFramework/FloatingPawnMovement.h"
+#include "Materials/MaterialInterface.h"
 #include <Kismet/GameplayStatics.h>
 
 #include "ProceduralMeshComponent.h"
 
 #include <set>
 
+namespace {
+void SortLocationSpawnPositionsByDistance(TArray<FVoxelObjectLocationData>& SpawnPositions, const FVector& PlayerPosition) {
+	// Sorting furthest first so nearby positions are removed from the end first
+	SpawnPositions.Sort([&PlayerPosition](const FVoxelObjectLocationData& Left, const FVoxelObjectLocationData& Right) {
+		return FVector::DistSquared(Left.ObjectPosition, PlayerPosition) > FVector::DistSquared(Right.ObjectPosition, PlayerPosition);
+	});
+}
+
+void SortNpcSpawnPositionsByDistance(TArray<TPair<FVoxelObjectLocationData, AnimalType>>& SpawnPositions, const FVector& PlayerPosition) {
+	// Sorting furthest first so nearby NPCs are removed from the end first
+	SpawnPositions.Sort([&PlayerPosition](const TPair<FVoxelObjectLocationData, AnimalType>& Left, const TPair<FVoxelObjectLocationData, AnimalType>& Right) {
+		return FVector::DistSquared(Left.Key.ObjectPosition, PlayerPosition) > FVector::DistSquared(Right.Key.ObjectPosition, PlayerPosition);
+	});
+}
+} // namespace
+
 // Sets default values
-AChunkWorld::AChunkWorld() : isLocationTaskRunning(false), isMeshTaskRunning(false) {
+AChunkWorld::AChunkWorld() {
 	// Set this actor to call Tick() every frame.  Yosu can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 	// Locking the tick at 60fps
@@ -63,15 +80,13 @@ void AChunkWorld::InitializePathfindingManager() {
 
 void AChunkWorld::printExecutionTime(Time& start, Time& end, const char* functionName) {
 	std::chrono::duration<double, std::milli> duration = end - start;
-	UE_LOG(LogTemp, Warning, TEXT("%s() took %d seconds, %d milliseconds to execute."), *FString(functionName),
-	       static_cast<int>((duration.count() / 1000)) % 60,
-	       static_cast<int>(fmod(duration.count(), 1000)));
+	UE_LOG(LogTemp, Warning, TEXT("%s() took %d seconds, %d milliseconds to execute."), *FString(functionName), static_cast<int>((duration.count() / 1000)) % 60, static_cast<int>(fmod(duration.count(), 1000)));
 }
 
 void AChunkWorld::spawnInitialWorld() {
 	int spawnedChunks{0};
 
-	// Add initial chunk position to spawn
+	// Queueing the centre chunk first so the world has a guaranteed anchor
 	FIntPoint PlayerStartCoords = FIntPoint(0, 0);
 	FVector ChunkPosition = FVector(0, 0, 0);
 	FIntPoint ChunkWorldCoords = FIntPoint(0, 0);
@@ -80,7 +95,7 @@ void AChunkWorld::spawnInitialWorld() {
 	CLDR->AddTreeChunkSpawnPosition(ChunkWorldCoords);
 	CLDR->AddNpcChunkSpawnPosition(ChunkWorldCoords);
 
-	// Add chunk positions to spawn by going in a spiral from origin position
+	// Walking square rings around the origin so nearer chunks enter the queue first
 	std::set<std::pair<int, int>> avoidPosition = {{0, 0}};
 	int currentSpiralRing = 1;
 	int maxSpiralRings = WTSR->DrawDistance;
@@ -103,6 +118,8 @@ void AChunkWorld::spawnInitialWorld() {
 				CLDR->AddChunksToSpawnPosition(FVoxelObjectLocationData(ChunkPosition, ChunkWorldCoords));
 
 				int ringDistance = FMath::Max(FMath::Abs(x), FMath::Abs(z));
+
+				// Tracking cheaper object ranges separately from terrain draw distance
 				if (ringDistance < vegetationMax) {
 					CLDR->AddVegetationChunkSpawnPosition(ChunkWorldCoords);
 				}
@@ -228,6 +245,7 @@ void AChunkWorld::onNewTerrainGenerated() {
 void AChunkWorld::destroyCurrentWorldChunks() {
 	bool isWorldEmpty = false;
 
+	// Clearing spawned chunks before rebuilding the queued world from updated settings
 	while (!isWorldEmpty) {
 		AActor* chunkToRemove = WTSR->GetNextChunkFromMap();
 		if (chunkToRemove) {
@@ -277,6 +295,10 @@ void AChunkWorld::SpawnTrees(FVoxelObjectLocationData LocationData, FVector Play
 }
 
 void AChunkWorld::SpawnGrass(FVoxelObjectLocationData LocationData) {
+	if (VoxelBasicMaterial == nullptr) {
+		CacheVoxelBasicMaterial();
+	}
+
 	UCustomProceduralMeshComponent* Mesh = NewObject<UCustomProceduralMeshComponent>(this);
 	Mesh->RegisterComponent();
 	Mesh->SetCastShadow(WTSR->GrassShadow);
@@ -294,11 +316,8 @@ void AChunkWorld::SpawnGrass(FVoxelObjectLocationData LocationData) {
 	Mesh->MeshType = MeshType::Grass;
 	Mesh->ObjectWorldCoords = LocationData.ObjectWorldCoords;
 
-	// Load and apply basic material to the mesh
-	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VoxelBasicMaterial.VoxelBasicMaterial"));
-
-	if (Material) {
-		Mesh->SetMaterial(0, Material);
+	if (VoxelBasicMaterial != nullptr) {
+		Mesh->SetMaterial(0, VoxelBasicMaterial);
 	}
 
 	Mesh->SetWorldLocation(LocationData.ObjectPosition);
@@ -309,6 +328,10 @@ void AChunkWorld::SpawnGrass(FVoxelObjectLocationData LocationData) {
 }
 
 void AChunkWorld::SpawnFlower(FVoxelObjectLocationData LocationData) {
+	if (VoxelBasicMaterial == nullptr) {
+		CacheVoxelBasicMaterial();
+	}
+
 	UCustomProceduralMeshComponent* Mesh = NewObject<UCustomProceduralMeshComponent>(this);
 	Mesh->RegisterComponent();
 	Mesh->SetCastShadow(WTSR->FlowerShadow);
@@ -326,11 +349,8 @@ void AChunkWorld::SpawnFlower(FVoxelObjectLocationData LocationData) {
 	Mesh->MeshType = MeshType::Flower;
 	Mesh->ObjectWorldCoords = LocationData.ObjectWorldCoords;
 
-	// Load and apply basic material to the mesh
-	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VoxelBasicMaterial.VoxelBasicMaterial"));
-
-	if (Material) {
-		Mesh->SetMaterial(0, Material);
+	if (VoxelBasicMaterial != nullptr) {
+		Mesh->SetMaterial(0, VoxelBasicMaterial);
 	}
 
 	Mesh->SetWorldLocation(LocationData.ObjectPosition);
@@ -338,6 +358,17 @@ void AChunkWorld::SpawnFlower(FVoxelObjectLocationData LocationData) {
 
 	// Adding the tree object to a map so I can remove it later on
 	WTSR->AddSpawnedFlower(LocationData.ObjectWorldCoords, Mesh);
+}
+
+void AChunkWorld::CacheVoxelBasicMaterial() {
+	if (VoxelBasicMaterial != nullptr) {
+		return;
+	}
+
+	VoxelBasicMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VoxelBasicMaterial.VoxelBasicMaterial"));
+	if (VoxelBasicMaterial == nullptr) {
+		UE_LOG(LogTemp, Warning, TEXT("VoxelBasicMaterial could not be loaded for vegetation meshes."));
+	}
 }
 
 void AChunkWorld::SpawnNPC(TPair<FVoxelObjectLocationData, AnimalType> LocationAndType) {
@@ -367,8 +398,8 @@ void AChunkWorld::SpawnNPC(TPair<FVoxelObjectLocationData, AnimalType> LocationA
 	}
 }
 
-// Remove the vegetation (tree, grass, flowers) spawn points, and add the actor pointers
-// to a local cache, to be removed across multiple frames in Tick().
+// Removing pending vegetation and NPC spawn work for a chunk being destroyed
+// Queueing live actors so destruction can be spread across multiple frames in Tick
 void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyPosition) {
 	// Remove remaining trees to spawn position at current chunk destroyed
 	CLDR->RemoveTreeSpawnPosition(destroyPosition);
@@ -378,6 +409,11 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 		return Item.ObjectWorldCoords == destroyPosition;
 	});
 
+	TArray<ATree*> TreesToRemove = WTSR->GetAndRemoveTreeFromMap(destroyPosition);
+	for (ATree* TreeToRemove : TreesToRemove) {
+		TreeActorsToRemove.Enqueue(TreeToRemove);
+	}
+
 	// Remove remaining grass to spawn position at current chunk destroyed
 	CLDR->RemoveGrassSpawnPosition(destroyPosition);
 
@@ -385,6 +421,11 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 	GrassPositionsToSpawn.RemoveAll([&](const FVoxelObjectLocationData& Item) {
 		return Item.ObjectWorldCoords == destroyPosition;
 	});
+
+	TArray<UCustomProceduralMeshComponent*> GrassToRemove = WTSR->GetAndRemoveGrassFromMap(destroyPosition);
+	for (UCustomProceduralMeshComponent* GrassToRemoveComponent : GrassToRemove) {
+		GrassActorsToRemove.Enqueue(GrassToRemoveComponent);
+	}
 
 	// Remove remaining flower to spawn position at current chunk destroyed
 	CLDR->RemoveFlowerSpawnPosition(destroyPosition);
@@ -394,6 +435,11 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 		return Item.ObjectWorldCoords == destroyPosition;
 	});
 
+	TArray<UCustomProceduralMeshComponent*> FlowersToRemove = WTSR->GetAndRemoveFlowerFromMap(destroyPosition);
+	for (UCustomProceduralMeshComponent* FlowerToRemoveComponent : FlowersToRemove) {
+		FlowerActorsToRemove.Enqueue(FlowerToRemoveComponent);
+	}
+
 	// Remove remaining NPC to spawn position at current chunk destroyed
 	CLDR->RemoveNPCSpawnPosition(destroyPosition);
 
@@ -401,10 +447,15 @@ void AChunkWorld::RemoveVegetationSpawnPointsAndActors(const FIntPoint& destroyP
 	NPCPositionsToSpawn.RemoveAll([&](const TPair<FVoxelObjectLocationData, AnimalType>& Item) {
 		return Item.Key.ObjectWorldCoords == destroyPosition;
 	});
+
+	TArray<ABasicNPC*> NpcsToRemove = WTSR->GetAndRemoveNpcFromMap(destroyPosition);
+	for (ABasicNPC* NpcToRemove : NpcsToRemove) {
+		NpcActorsToRemove.Enqueue(NpcToRemove);
+	}
 }
 
 void AChunkWorld::DestroyTreeActors() {
-	// Remove tree actors
+	// Limiting removals per frame to avoid destruction spikes when chunks stream out
 	int removedTreeCounter = 0;
 	while (!TreeActorsToRemove.IsEmpty() && removedTreeCounter < treesToRemovePerFrame) {
 
@@ -420,7 +471,7 @@ void AChunkWorld::DestroyTreeActors() {
 }
 
 void AChunkWorld::DestroyGrassActors() {
-	// Remove grass actors
+	// Limiting component destruction because vegetation can leave range in large batches
 	int removedGrassCounter = 0;
 	while (!GrassActorsToRemove.IsEmpty() && removedGrassCounter < grassToRemovePerFrame) {
 
@@ -441,7 +492,7 @@ void AChunkWorld::DestroyGrassActors() {
 }
 
 void AChunkWorld::DestroyFlowerActors() {
-	// Remove flower actors
+	// Limiting component destruction because vegetation can leave range in large batches
 	int removedFlowerCounter = 0;
 	while (!FlowerActorsToRemove.IsEmpty() && removedFlowerCounter < flowerToRemovePerFrame) {
 
@@ -462,7 +513,7 @@ void AChunkWorld::DestroyFlowerActors() {
 }
 
 void AChunkWorld::DestroyNpcActors() {
-	// Remove NPC actors
+	// Limiting NPC destruction to keep streaming work spread across frames
 	int removedNpcCounter = 0;
 	while (!NpcActorsToRemove.IsEmpty() && removedNpcCounter < npcToRemovePerFrame) {
 
@@ -482,120 +533,155 @@ void AChunkWorld::DestroyNpcActors() {
 	}
 }
 
-void AChunkWorld::SpawnMultipleGrassObjects() {
-	// Append grass positions waiting to be spawned
-	TArray<FVoxelObjectLocationData> grassSpawnPositions = CLDR->getGrassSpawnPositionInRange();
+void AChunkWorld::SpawnMultipleGrassObjects(const FVector& PlayerPosition) {
+	// Gathering spawn positions currently in range before trimming stale cached entries
+	const FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
+	TArray<FVoxelObjectLocationData> grassSpawnPositions = CLDR->getGrassSpawnPositionInRange(PlayerChunkCoords);
 	GrassPositionsToSpawn.Append(grassSpawnPositions);
+	TrimCachedSpawnPositions();
+	SortLocationSpawnPositionsByDistance(GrassPositionsToSpawn, PlayerPosition);
 
-	// Spawn a few trees in the current frame
+	// Spawn a few trees in the current frames
 	int spawnedGrassCounter = 0;
-	for (int positionIndex = 0; positionIndex < GrassPositionsToSpawn.Num();) {
+	while (!GrassPositionsToSpawn.IsEmpty()) {
 		if (spawnedGrassCounter >= grassToSpawnPerFrame) {
 			return;
 		}
 
+		const FVoxelObjectLocationData GrassPositionToSpawn = GrassPositionsToSpawn.Pop(EAllowShrinking::No);
+
 		// Check if the grass position is still in range, otherwise discard it
-		bool isGrassStillInRange = VegetationChunkSpawnPoints.Contains(GrassPositionsToSpawn[positionIndex].ObjectWorldCoords);
+		bool isGrassStillInRange = VegetationChunkSpawnPoints.Contains(GrassPositionToSpawn.ObjectWorldCoords);
 		if (isGrassStillInRange) {
-			SpawnGrass(GrassPositionsToSpawn[positionIndex]);
+			SpawnGrass(GrassPositionToSpawn);
 			WTSR->GrassCount++;
+			spawnedGrassCounter++;
 		}
 
-		// Print the grass count every 50
+		// Printing the grass count every 50
 		/*if (WTSR->GrassCount % 1000 == 0) {
 		    UE_LOG(LogTemp, Log, TEXT("Grass count: %d"), WTSR->GrassCount);
 		}*/
-
-		GrassPositionsToSpawn.RemoveAt(positionIndex);
-		spawnedGrassCounter++;
 	}
 }
 
-void AChunkWorld::SpawnMultipleFlowerObjects() {
+void AChunkWorld::SpawnMultipleFlowerObjects(const FVector& PlayerPosition) {
 
-	// Append flower positions waiting to be spawned
-	TArray<FVoxelObjectLocationData> flowerSpawnPositions = CLDR->getFlowerSpawnPositionInRange();
+	// Gathering spawn positions currently in range before trimming stale cached entries
+	const FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
+	TArray<FVoxelObjectLocationData> flowerSpawnPositions = CLDR->getFlowerSpawnPositionInRange(PlayerChunkCoords);
 	FlowerPositionsToSpawn.Append(flowerSpawnPositions);
+	TrimCachedSpawnPositions();
+	SortLocationSpawnPositionsByDistance(FlowerPositionsToSpawn, PlayerPosition);
 
 	// Spawn a few flowers in the current frame
 	int spawnedFlowerCounter = 0;
-	for (int positionIndex = 0; positionIndex < FlowerPositionsToSpawn.Num();) {
+	while (!FlowerPositionsToSpawn.IsEmpty()) {
 		if (spawnedFlowerCounter >= flowerToSpawnPerFrame) {
 			return;
 		}
 
+		const FVoxelObjectLocationData FlowerPositionToSpawn = FlowerPositionsToSpawn.Pop(EAllowShrinking::No);
+
 		// Check if the flower position is still in range, otherwise discard it
-		bool isFlowerStillInRange = VegetationChunkSpawnPoints.Contains(FlowerPositionsToSpawn[positionIndex].ObjectWorldCoords);
+		bool isFlowerStillInRange = VegetationChunkSpawnPoints.Contains(FlowerPositionToSpawn.ObjectWorldCoords);
 		if (isFlowerStillInRange) {
-			SpawnFlower(FlowerPositionsToSpawn[positionIndex]);
+			SpawnFlower(FlowerPositionToSpawn);
 			WTSR->FlowerCount++;
+			spawnedFlowerCounter++;
 		}
 
-		// Print the flower count every 50
+		// Printing the flower count every 50
 		/*if (WTSR->FlowerCount % 50 == 0) {
 		    UE_LOG(LogTemp, Log, TEXT("Flower count: %d"), WTSR->FlowerCount);
 		}*/
-
-		FlowerPositionsToSpawn.RemoveAt(positionIndex);
-		spawnedFlowerCounter++;
 	}
 }
 
-void AChunkWorld::SpawnMultipleNpcObjects() {
-	// Append NPC positions waiting to be spawned
-	TArray<TPair<FVoxelObjectLocationData, AnimalType>> NPCSpawnPositions = CLDR->getNPCSpawnPositionInRange();
+void AChunkWorld::SpawnMultipleNpcObjects(const FVector& PlayerPosition) {
+	// Gathering NPC spawn positions currently in range before trimming stale cached entries
+	const FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
+	TArray<TPair<FVoxelObjectLocationData, AnimalType>> NPCSpawnPositions = CLDR->getNPCSpawnPositionInRange(PlayerChunkCoords);
 	NPCPositionsToSpawn.Append(NPCSpawnPositions);
+	TrimCachedSpawnPositions();
+	SortNpcSpawnPositionsByDistance(NPCPositionsToSpawn, PlayerPosition);
 
 	// Spawn a few flowers in the current frame
 	int spawnedNPCCounter = 0;
-	for (int positionIndex = 0; positionIndex < NPCPositionsToSpawn.Num();) {
+	while (!NPCPositionsToSpawn.IsEmpty()) {
 		if (spawnedNPCCounter >= npcToSpawnPerFrame) {
 			break;
 		}
 
-		bool isNpcStillInRange = NpcChunkSpawnPoints.Contains(NPCPositionsToSpawn[positionIndex].Key.ObjectWorldCoords);
+		const TPair<FVoxelObjectLocationData, AnimalType> NpcPositionToSpawn = NPCPositionsToSpawn.Pop(EAllowShrinking::No);
+
+		bool isNpcStillInRange = NpcChunkSpawnPoints.Contains(NpcPositionToSpawn.Key.ObjectWorldCoords);
 		if (isNpcStillInRange) {
-			SpawnNPC(NPCPositionsToSpawn[positionIndex]);
+			SpawnNPC(NpcPositionToSpawn);
 			WTSR->NPCCount++;
+			spawnedNPCCounter++;
 		}
 
-		// Print the NPC count every 10
+		// Printing the NPC count every 10
 		// if (WTSR->NPCCount % 10 == 0) {
 		//	UE_LOG(LogTemp, Log, TEXT("NPC count: %d"), WTSR->NPCCount);
 		//}
-
-		NPCPositionsToSpawn.RemoveAt(positionIndex);
-		spawnedNPCCounter++;
 	}
 }
 
 void AChunkWorld::SpawnMultipleTreeObjects(const FVector& PlayerPosition) {
-	// Append tree positions waiting to be spawned
-	TArray<FVoxelObjectLocationData> treeSpawnPositions = CLDR->getTreeSpawnPositionsInRange();
+	// Gathering tree spawn positions currently in range before trimming stale cached entries
+	const FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
+	TArray<FVoxelObjectLocationData> treeSpawnPositions = CLDR->getTreeSpawnPositionsInRange(PlayerChunkCoords);
 	TreePositionsToSpawn.Append(treeSpawnPositions);
+	TrimCachedSpawnPositions();
+	SortLocationSpawnPositionsByDistance(TreePositionsToSpawn, PlayerPosition);
 
 	int spawnedTreeCounter = 0;
-	for (int32 positionIndex = 0; positionIndex < TreePositionsToSpawn.Num();) {
+	while (!TreePositionsToSpawn.IsEmpty()) {
 		if (spawnedTreeCounter >= treesToSpawnPerFrame) {
 			spawnedTreesThisFrame = true;
 			break;
 		}
 
+		const FVoxelObjectLocationData TreePositionToSpawn = TreePositionsToSpawn.Pop(EAllowShrinking::No);
+
 		// Check if the tree position is still in range, otherwise discard it
-		bool isTreeStillInRange = TreeChunkSpawnPoints.Contains(TreePositionsToSpawn[positionIndex].ObjectWorldCoords);
+		bool isTreeStillInRange = TreeChunkSpawnPoints.Contains(TreePositionToSpawn.ObjectWorldCoords);
 		if (isTreeStillInRange) {
-			SpawnTrees(TreePositionsToSpawn[positionIndex], PlayerPosition);
+			SpawnTrees(TreePositionToSpawn, PlayerPosition);
 			WTSR->TreeCount++;
-		}
+			spawnedTreeCounter++;
 
-		// Print the tree count every 50
-		if (WTSR->TreeCount % 1000 == 0) {
-			UE_LOG(LogTemp, Log, TEXT("Tree count: %d"), WTSR->TreeCount);
+			// Printing the tree count every 50
+			if (WTSR->TreeCount % 1000 == 0) {
+				UE_LOG(LogTemp, Log, TEXT("Tree count: %d"), WTSR->TreeCount);
+			}
 		}
-
-		TreePositionsToSpawn.RemoveAt(positionIndex);
-		spawnedTreeCounter++;
 	}
+}
+
+void AChunkWorld::TrimCachedSpawnPositions() {
+	// Dropping cached positions that are no longer inside the active spawn ranges
+	TreePositionsToSpawn.RemoveAllSwap([this](const FVoxelObjectLocationData& Item) {
+		return !TreeChunkSpawnPoints.Contains(Item.ObjectWorldCoords);
+	},
+	                                   EAllowShrinking::No);
+
+	GrassPositionsToSpawn.RemoveAllSwap([this](const FVoxelObjectLocationData& Item) {
+		return !VegetationChunkSpawnPoints.Contains(Item.ObjectWorldCoords);
+	},
+	                                    EAllowShrinking::No);
+
+	FlowerPositionsToSpawn.RemoveAllSwap([this](const FVoxelObjectLocationData& Item) {
+		return !VegetationChunkSpawnPoints.Contains(Item.ObjectWorldCoords);
+	},
+	                                     EAllowShrinking::No);
+
+	NPCPositionsToSpawn.RemoveAllSwap([this](const TPair<FVoxelObjectLocationData, AnimalType>& Item) {
+		return !NpcChunkSpawnPoints.Contains(Item.Key.ObjectWorldCoords);
+	},
+	                                  EAllowShrinking::No);
 }
 
 void AChunkWorld::UpdateChunksCollision() {
@@ -631,12 +717,21 @@ void AChunkWorld::SpawnSingleChunk(const FVector& PlayerPosition) {
 		return;
 	}
 
+	// Marking this frame as chunk heavy so later vegetation spawning can yield
 	spawnedChunksThisFrame = true;
 
 	// Get the location data and the computed mesh data for the chunk
 	FVoxelObjectLocationData waitingMeshLocationData;
 	FVoxelObjectMeshData waitingMeshData;
-	CLDR->getComputedMeshDataAndLocationData(waitingMeshLocationData, waitingMeshData);
+	const FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
+	const bool bHasComputedMeshData = CLDR->getComputedMeshDataAndLocationData(waitingMeshLocationData, waitingMeshData, PlayerChunkCoords);
+	if (!bHasComputedMeshData) {
+		return;
+	}
+
+	if (!CLDR->IsChunkSpawnRequested(waitingMeshLocationData.ObjectWorldCoords)) {
+		return;
+	}
 
 	Time start = std::chrono::high_resolution_clock::now();
 
@@ -679,7 +774,7 @@ void AChunkWorld::DestroySingleChunk() {
 	FIntPoint chunkToDestroyPosition{};
 	bool doesDestroyPositionExist = CLDR->getChunkToDestroyPosition(chunkToDestroyPosition);
 
-	// I need to check if the destroy position exists in the map, otherwise I need to push it back
+	// Skipping when no streamed out chunk is ready for destruction
 	if (!doesDestroyPositionExist) {
 		return;
 	}
@@ -688,15 +783,13 @@ void AChunkWorld::DestroySingleChunk() {
 	if (IsValid(chunkToRemove)) {
 		chunkToRemove->Destroy();
 
-		// Remove remaining vegetation spawn points for the destroyed chunk location
-		// and add the aactor pointers to a local cache to be removed across multiple frames
+		// Removing remaining object work tied to this chunk before pathfinding data is cleared
 		RemoveVegetationSpawnPointsAndActors(chunkToDestroyPosition);
 
 		// Remove the voxel surface points from the pathfinding map
 		CLDR->RemoveSurfaceVoxelPointsForChunk(chunkToDestroyPosition);
 	} else {
-		// Add the chunk position back because the chunk is not yet spawned
-		CLDR->AddChunksToDestroyPosition(chunkToDestroyPosition); // TODO Optimize this, as it keeps getting removed and added back. I should use a TMap instead and remove the entry of that object instead, preventing it from spawning in the first place.
+		CLDR->RemoveSurfaceVoxelPointsForChunk(chunkToDestroyPosition);
 	}
 }
 
@@ -716,6 +809,8 @@ void AChunkWorld::BeginPlay() {
 
 	spawnInitialWorld();
 
+	CacheVoxelBasicMaterial();
+
 	generateTreeMeshVariations();
 	generateGrassMeshVariations();
 	generateFlowerMeshVariations();
@@ -731,35 +826,12 @@ void AChunkWorld::BeginPlay() {
 void AChunkWorld::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
 
-	// Cleanup
 	if (PathfindingManager) {
 		PathfindingManager->ShutDownThreadPool();
 		PathfindingManager.Reset();
 	}
 
-	if (chunksLocationRunnable) {
-		chunksLocationRunnable->Stop();
-	}
-
-	if (chunksLocationThread) {
-		chunksLocationThread->WaitForCompletion();
-		chunksLocationThread.Reset();
-	}
-
-	chunksLocationRunnable.Reset();
-	isLocationTaskRunning.AtomicSet(false);
-
-	if (chunkMeshDataRunnable) {
-		chunkMeshDataRunnable->Stop();
-	}
-
-	if (chunkMeshDataThread) {
-		chunkMeshDataThread->WaitForCompletion();
-		chunkMeshDataThread.Reset();
-	}
-
-	chunkMeshDataRunnable.Reset();
-	isMeshTaskRunning.AtomicSet(false);
+	GenerationTaskManager.Shutdown();
 
 	if (PerlinNoiseSettingsRef) {
 		PerlinNoiseSettingsRef = nullptr;
@@ -784,14 +856,7 @@ FIntPoint AChunkWorld::GetChunkCoordinates(FVector Position) const {
 	return FIntPoint(ChunkX, ChunkZ);
 }
 
-// Called every frame
-void AChunkWorld::Tick(float DeltaSeconds) {
-	Super::Tick(DeltaSeconds);
-
-	spawnedTreesThisFrame = false;
-	spawnedChunksThisFrame = false;
-
-	// Print the average chunk mesh compute time
+void AChunkWorld::LogChunkMeshComputeTime() {
 	if (WTSR->chunksMeshCounter % 100 == 0 && WTSR->chunksMeshCounter != lastLoggedChunkCount) {
 		float chunkSpawnTime = WTSR->chunkSpawnTime.count() / WTSR->chunksMeshCounter;
 		int seconds = static_cast<int>(chunkSpawnTime) / 1000;
@@ -801,14 +866,39 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 
 		lastLoggedChunkCount = WTSR->chunksMeshCounter;
 	}
+}
 
-	// If Perlin noise settings changed, respawn the world
+bool AChunkWorld::CanRunWorldTick() const {
+	if (WTSR == nullptr) {
+		UE_LOG(LogTemp, Error, TEXT("WTSR is nullptr!"));
+		return false;
+	}
+
+	if (PNSR == nullptr) {
+		UE_LOG(LogTemp, Error, TEXT("PNSR is nullptr!"));
+		return false;
+	}
+
+	if (CLDR == nullptr) {
+		UE_LOG(LogTemp, Error, TEXT("CLDR is nullptr!"));
+		return false;
+	}
+
+	if (!isInitialWorldGenerated) {
+		UE_LOG(LogTemp, Warning, TEXT("World not yet initialized. Tick() will exit now."));
+		return false;
+	}
+
+	return true;
+}
+
+void AChunkWorld::HandlePerlinNoiseSettingsChanged() {
 	if (PNSR->changedSettings) {
 		isInitialWorldGenerated = false;
 
 		destroyCurrentWorldChunks();
 
-		// Update the noise?
+		// Rebuilding noise generators before queueing the initial world again
 		SetPerlinNoiseSettings(PerlinNoiseSettingsRef);
 
 		spawnInitialWorld();
@@ -817,127 +907,105 @@ void AChunkWorld::Tick(float DeltaSeconds) {
 
 		PNSR->changedSettings = false;
 	}
+}
 
-	// Continue running only if the BeginPlay() is done initializing the world
-	if (!isInitialWorldGenerated) {
-		UE_LOG(LogTemp, Warning, TEXT("World not yet initialized. Tick() will exit now."));
-		return;
-	}
-
-	if (WTSR == nullptr) {
-		UE_LOG(LogTemp, Error, TEXT("WTSR is nullptr!"));
-		return;
-	}
-
-	FVector PlayerPosition = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
-
-	// Update the player's current position so NPCs can use it for pathfinding
-	updatePlayerCurrentPosition(PlayerPosition);
-
+void AChunkWorld::UpdatePlayerChunkStreaming(const FVector& PlayerPosition) {
 	const FIntPoint PlayerChunkCoords = GetChunkCoordinates(PlayerPosition);
 	const FIntPoint InitialChunkCoords = GetChunkCoordinates(WTSR->getInitialPlayerPosition());
 
+	// Starting a location update only after the player crosses a chunk boundary
 	const bool isPlayerMovingOnAxisX = PlayerChunkCoords.X != InitialChunkCoords.X;
 	const bool isPlayerMovingOnAxisZ = PlayerChunkCoords.Y != InitialChunkCoords.Y;
 
-	if (!isLocationTaskRunning && (isPlayerMovingOnAxisX || isPlayerMovingOnAxisZ)) {
-		isLocationTaskRunning.AtomicSet(true);
-		chunksLocationRunnable = MakeUnique<ChunksLocationRunnable>(PlayerPosition, WTSR, CLDR, &GrassActorsToRemove, &FlowerActorsToRemove, &TreeActorsToRemove, &NpcActorsToRemove);
-		chunksLocationThread.Reset(FRunnableThread::Create(chunksLocationRunnable.Get(), TEXT("chunksLocationThread"), 0, TPri_Normal));
+	if (isPlayerMovingOnAxisX || isPlayerMovingOnAxisZ) {
+		GenerationTaskManager.TryStartLocationTask(PlayerPosition, WTSR, CLDR, &GrassActorsToRemove, &FlowerActorsToRemove, &TreeActorsToRemove, &NpcActorsToRemove);
 	}
+}
 
-	// Clean up terrain thread if it's done computing
-	if (chunksLocationRunnable && chunksLocationRunnable->IsTaskComplete()) {
+void AChunkWorld::ProcessGenerationJobs() {
+	// Completing finished async work on the game thread before using its results
+	if (GenerationTaskManager.CompleteLocationTaskIfReady()) {
 		onNewTerrainGenerated();
-
-		if (chunksLocationThread) {
-			chunksLocationRunnable->Stop();
-			chunksLocationThread->WaitForCompletion();
-			chunksLocationThread.Reset();
-		}
-
-		if (chunksLocationRunnable) {
-			chunksLocationRunnable.Reset();
-		}
-
-		isLocationTaskRunning.AtomicSet(false);
 	}
 
-	// Create mesh for chunk position if there is a position waiting to be processed
-	if (!isMeshTaskRunning) {
-		FVoxelObjectLocationData chunkToSpawnPosition;
-		const bool doesSpawnPositionExist = CLDR->getChunkToSpawnPosition(chunkToSpawnPosition);
+	// Starting at most one mesh build task so generation remains controlled
+	GenerationTaskManager.TryStartMeshTask(WTSR, CLDR, PNSR);
 
-		if (doesSpawnPositionExist) {
-			// Calculate the chunk mesh data in a separate thread
-			isMeshTaskRunning.AtomicSet(true);
-			chunkMeshDataRunnable = MakeUnique<ChunkMeshDataRunnable>(chunkToSpawnPosition, WTSR, CLDR, PNSR);
-			chunkMeshDataThread.Reset(FRunnableThread::Create(chunkMeshDataRunnable.Get(), TEXT("chunkMeshDataThread"), 0, TPri_Normal));
-		}
-	}
-
-	// Cleanup mesh thread if it's done computing
-	if (chunkMeshDataRunnable && chunkMeshDataRunnable->IsTaskComplete()) {
+	if (GenerationTaskManager.CompleteMeshTaskIfReady()) {
 		onNewTerrainGenerated();
-
-		if (chunkMeshDataThread) {
-			chunkMeshDataRunnable->Stop();
-			chunkMeshDataThread->WaitForCompletion();
-			chunkMeshDataThread.Reset();
-		}
-
-		if (chunkMeshDataRunnable) {
-			chunkMeshDataRunnable.Reset();
-		}
-
-		isMeshTaskRunning.AtomicSet(false);
 	}
+}
 
-	// Spawn chunk if there is a calculated mesh data waiting
+void AChunkWorld::ProcessChunkLifecycle(const FVector& PlayerPosition) {
+	// Spawning and destroying one terrain chunk at a time to smooth streaming cost
 	SpawnSingleChunk(PlayerPosition);
 	UpdateChunksCollision();
 
-	// Destroy a chunk and remove it from the map if there is a destroy position in queue
 	DestroySingleChunk();
+}
 
-	// Reduce computing per frame by returning early if a chunk already got spawned this frame
-	if (spawnedChunksThisFrame) {
-		return;
-	}
-
-	// Check every few frames for spawned points in range and for vegetation not in range
+void AChunkWorld::RefreshSpawnPointRanges() {
 	if (FramesCounterCheckSpawnedPointsInRange > FramesToCheckForSpawnPointsInRange) {
+		// Refreshing range caches periodically because these scans can touch many objects
 		CLDR->CheckForSpawnPointsInRange();
 		CLDR->CheckAndAddVegetationNotInRange(&GrassActorsToRemove, &FlowerActorsToRemove);
 		CLDR->CheckAndAddTreesNotInRange(&TreeActorsToRemove);
 		CLDR->CheckAndAddNpcsNotInRange(&NpcActorsToRemove);
 		FramesCounterCheckSpawnedPointsInRange = 0;
 
-		// Get an updated vegetation and tree chunk spawn points
+		// Updating active spawn ranges used to validate cached spawn queues
 		VegetationChunkSpawnPoints = CLDR->GetVegetationChunkSpawnPoints();
 		TreeChunkSpawnPoints = CLDR->GetTreeChunkSpawnPoints();
 		NpcChunkSpawnPoints = CLDR->GetNpcChunkSpawnPoints();
+		TrimCachedSpawnPositions();
 	}
 	FramesCounterCheckSpawnedPointsInRange++;
+}
 
-	// Spawn and remove a few Tree objects
+void AChunkWorld::ProcessVegetationAndNpcSpawning(const FVector& PlayerPosition) {
+	// Processing trees first because their collision can affect nearby gameplay sooner
 	SpawnMultipleTreeObjects(PlayerPosition);
 	DestroyTreeActors();
 
-	// Update tree collision
 	UpdateTreesCollision();
 
-	// Uncomment to use the testing configurations instead
-	// UseTestingConfigurations(ConfigToRun::NotificationAttackFoodSource);
+	SpawnMultipleGrassObjects(PlayerPosition);
+	SpawnMultipleFlowerObjects(PlayerPosition);
+	SpawnMultipleNpcObjects(PlayerPosition);
 
-	SpawnMultipleGrassObjects();
-	SpawnMultipleFlowerObjects();
-	SpawnMultipleNpcObjects();
-
-	// Destroy a few vegetation actors and NPCs
 	DestroyGrassActors();
 	DestroyFlowerActors();
 	DestroyNpcActors();
+}
+
+// Called every frame
+void AChunkWorld::Tick(float DeltaSeconds) {
+	Super::Tick(DeltaSeconds);
+
+	spawnedTreesThisFrame = false;
+	spawnedChunksThisFrame = false;
+
+	if (!CanRunWorldTick()) {
+		return;
+	}
+
+	LogChunkMeshComputeTime();
+	HandlePerlinNoiseSettingsChanged();
+
+	FVector PlayerPosition = GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation();
+	updatePlayerCurrentPosition(PlayerPosition);
+
+	UpdatePlayerChunkStreaming(PlayerPosition);
+	ProcessGenerationJobs();
+	ProcessChunkLifecycle(PlayerPosition);
+
+	// Giving terrain spawning the frame budget before processing lighter world objects
+	if (spawnedChunksThisFrame) {
+		return;
+	}
+
+	RefreshSpawnPointRanges();
+	ProcessVegetationAndNpcSpawning(PlayerPosition);
 }
 
 void AChunkWorld::calculateAverageChunkSpawnTime(const Time& startTime, const Time& endTime) {

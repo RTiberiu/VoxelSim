@@ -2,9 +2,61 @@
 
 #include "..\TerrainSettings\WorldTerrainSettings.h"
 
+namespace {
+int64 GetChunkDistanceSquared(const FIntPoint& ChunkPosition, const FIntPoint& PriorityChunkPosition) {
+	const int64 DistanceX = static_cast<int64>(ChunkPosition.X) - static_cast<int64>(PriorityChunkPosition.X);
+	const int64 DistanceY = static_cast<int64>(ChunkPosition.Y) - static_cast<int64>(PriorityChunkPosition.Y);
+	return DistanceX * DistanceX + DistanceY * DistanceY;
+}
+
+template <typename SpawnPositionType>
+TArray<SpawnPositionType> TakeNearestSpawnPositions(
+    TSet<FIntPoint>& InRangeChunkPositions,
+    TMap<FIntPoint, TArray<SpawnPositionType>>& SpawnPositionsByChunk,
+    const FIntPoint& PriorityChunkPosition
+) {
+	TArray<SpawnPositionType> Output;
+	TArray<FIntPoint> EmptyChunkPositions;
+	FIntPoint BestChunkPosition = FIntPoint::ZeroValue;
+	int64 BestDistanceSquared = MAX_int64;
+	bool bFoundSpawnPositions = false;
+
+	for (const FIntPoint& ChunkPosition : InRangeChunkPositions) {
+		const TArray<SpawnPositionType>* SpawnPositions = SpawnPositionsByChunk.Find(ChunkPosition);
+		if (SpawnPositions == nullptr || SpawnPositions->IsEmpty()) {
+			EmptyChunkPositions.Add(ChunkPosition);
+			continue;
+		}
+
+		const int64 DistanceSquared = GetChunkDistanceSquared(ChunkPosition, PriorityChunkPosition);
+		if (DistanceSquared < BestDistanceSquared) {
+			BestChunkPosition = ChunkPosition;
+			BestDistanceSquared = DistanceSquared;
+			bFoundSpawnPositions = true;
+		}
+	}
+
+	for (const FIntPoint& EmptyChunkPosition : EmptyChunkPositions) {
+		InRangeChunkPositions.Remove(EmptyChunkPosition);
+		SpawnPositionsByChunk.Remove(EmptyChunkPosition);
+	}
+
+	if (!bFoundSpawnPositions) {
+		return Output;
+	}
+
+	if (TArray<SpawnPositionType>* SpawnPositions = SpawnPositionsByChunk.Find(BestChunkPosition)) {
+		Output = MoveTemp(*SpawnPositions);
+	}
+
+	SpawnPositionsByChunk.Remove(BestChunkPosition);
+	InRangeChunkPositions.Remove(BestChunkPosition);
+	return Output;
+}
+}
+
 UChunkLocationData::UChunkLocationData()
-    : ChunksToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
-      ChunksToDestroySemaphore(MakeUnique<FairSemaphore>(1)),
+    : ChunkStreamingSemaphore(MakeUnique<FairSemaphore>(1)),
       TreesToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
       GrassToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
       FlowersToSpawnSemaphore(MakeUnique<FairSemaphore>(1)),
@@ -24,22 +76,69 @@ void UChunkLocationData::SetWorldTerrainSettings(UWorldTerrainSettings* InWorldT
 }
 
 bool UChunkLocationData::getChunkToSpawnPosition(FVoxelObjectLocationData& OutLocation) {
-	return chunksToSpawnPositions.Dequeue(OutLocation);
+	ChunkStreamingSemaphore->Acquire();
+
+	FVoxelObjectLocationData CandidateLocation;
+	while (chunksToSpawnPositions.Dequeue(CandidateLocation)) {
+		if (RequestedChunkSpawnPositions.Contains(CandidateLocation.ObjectWorldCoords)) {
+			OutLocation = CandidateLocation;
+			ChunkStreamingSemaphore->Release();
+			return true;
+		}
+	}
+
+	ChunkStreamingSemaphore->Release();
+	return false;
 }
 
 bool UChunkLocationData::getChunkToDestroyPosition(FIntPoint& OutPosition) {
-	return chunksToDestroyPositions.Dequeue(OutPosition);
+	ChunkStreamingSemaphore->Acquire();
+
+	FIntPoint CandidatePosition = FIntPoint::ZeroValue;
+	while (chunksToDestroyPositions.Dequeue(CandidatePosition)) {
+		if (!RequestedChunkSpawnPositions.Contains(CandidatePosition)) {
+			OutPosition = CandidatePosition;
+			ChunkStreamingSemaphore->Release();
+			return true;
+		}
+	}
+
+	ChunkStreamingSemaphore->Release();
+	return false;
 }
 
-bool UChunkLocationData::getComputedMeshDataAndLocationData(FVoxelObjectLocationData& locationData, FVoxelObjectMeshData& meshData) {
+bool UChunkLocationData::getComputedMeshDataAndLocationData(FVoxelObjectLocationData& locationData, FVoxelObjectMeshData& meshData, const FIntPoint& PriorityChunkPosition) {
+	ChunkStreamingSemaphore->Acquire();
 	MeshDataSemaphore->Acquire();
-	FChunkMeshBuildResult MeshBuildResult;
-	const bool bRemovedMeshData = ComputedMeshResults.Dequeue(MeshBuildResult);
-	MeshDataSemaphore->Release();
 
-	if (!bRemovedMeshData) {
+	int32 BestResultIndex = INDEX_NONE;
+	int64 BestDistanceSquared = MAX_int64;
+
+	for (int32 ResultIndex = ComputedMeshResults.Num() - 1; ResultIndex >= 0; --ResultIndex) {
+		const FIntPoint& ChunkPosition = ComputedMeshResults[ResultIndex].LocationData.ObjectWorldCoords;
+		if (!RequestedChunkSpawnPositions.Contains(ChunkPosition)) {
+			ComputedMeshResults.RemoveAtSwap(ResultIndex, 1, EAllowShrinking::No);
+			continue;
+		}
+
+		const int64 DistanceSquared = GetChunkDistanceSquared(ChunkPosition, PriorityChunkPosition);
+		if (DistanceSquared < BestDistanceSquared) {
+			BestResultIndex = ResultIndex;
+			BestDistanceSquared = DistanceSquared;
+		}
+	}
+
+	if (BestResultIndex == INDEX_NONE) {
+		MeshDataSemaphore->Release();
+		ChunkStreamingSemaphore->Release();
 		return false;
 	}
+
+	FChunkMeshBuildResult MeshBuildResult = MoveTemp(ComputedMeshResults[BestResultIndex]);
+	ComputedMeshResults.RemoveAtSwap(BestResultIndex, 1, EAllowShrinking::No);
+
+	MeshDataSemaphore->Release();
+	ChunkStreamingSemaphore->Release();
 
 	locationData = MeshBuildResult.LocationData;
 	meshData = MeshBuildResult.MeshData;
@@ -53,17 +152,38 @@ bool UChunkLocationData::isMeshWaitingToBeSpawned() {
 	return bIsMeshWaiting;
 }
 
+bool UChunkLocationData::IsChunkSpawnRequested(const FIntPoint& chunkPosition) const {
+	ChunkStreamingSemaphore->Acquire();
+	const bool bIsChunkSpawnRequested = RequestedChunkSpawnPositions.Contains(chunkPosition);
+	ChunkStreamingSemaphore->Release();
+	return bIsChunkSpawnRequested;
+}
+
 void UChunkLocationData::AddChunksToSpawnPosition(const FVoxelObjectLocationData position) {
-	chunksToSpawnPositions.Enqueue(position);
+	ChunkStreamingSemaphore->Acquire();
+
+	if (!RequestedChunkSpawnPositions.Contains(position.ObjectWorldCoords)) {
+		RequestedChunkSpawnPositions.Add(position.ObjectWorldCoords);
+		chunksToSpawnPositions.Enqueue(position);
+	}
+
+	ChunkStreamingSemaphore->Release();
 }
 
 void UChunkLocationData::AddChunksToDestroyPosition(const FIntPoint& position) {
+	ChunkStreamingSemaphore->Acquire();
+	RequestedChunkSpawnPositions.Remove(position);
 	chunksToDestroyPositions.Enqueue(position);
+	ChunkStreamingSemaphore->Release();
 }
 
 void UChunkLocationData::AddMeshDataForPosition(const FVoxelObjectLocationData chunkLocationData, const FVoxelObjectMeshData meshData) {
+	if (!IsChunkSpawnRequested(chunkLocationData.ObjectWorldCoords)) {
+		return;
+	}
+
 	MeshDataSemaphore->Acquire();
-	ComputedMeshResults.Enqueue(FChunkMeshBuildResult{chunkLocationData, meshData});
+	ComputedMeshResults.Add(FChunkMeshBuildResult{chunkLocationData, meshData});
 	MeshDataSemaphore->Release();
 }
 
@@ -76,8 +196,11 @@ bool UChunkLocationData::GetTreeToDestroyPosition(FIntPoint& treePosition) {
 }
 
 void UChunkLocationData::emptyPositionQueues() {
+	ChunkStreamingSemaphore->Acquire();
 	chunksToSpawnPositions.Empty();
 	chunksToDestroyPositions.Empty();
+	RequestedChunkSpawnPositions.Empty();
+	ChunkStreamingSemaphore->Release();
 }
 
 void UChunkLocationData::AddVegetationChunkSpawnPosition(FIntPoint& chunkPosition) {
@@ -215,11 +338,8 @@ void UChunkLocationData::CheckAndAddVegetationNotInRange(
 ) {
 	VegetationChunkSemaphore->Acquire();
 
-	// Getting the chunk coordinates from vegetation chunk spawn points
-	TArray<FIntPoint> Keys = VegetationChunkSpawnPoints.Array();
-
-	WTSR->CheckAndReturnGrassNotInRange(Keys, GrassActorsToRemove);
-	WTSR->CheckAndReturnFlowersNotInRange(Keys, FlowerActorsToRemove);
+	WTSR->CheckAndReturnGrassNotInRange(VegetationChunkSpawnPoints, GrassActorsToRemove);
+	WTSR->CheckAndReturnFlowersNotInRange(VegetationChunkSpawnPoints, FlowerActorsToRemove);
 
 	VegetationChunkSemaphore->Release();
 }
@@ -227,10 +347,7 @@ void UChunkLocationData::CheckAndAddVegetationNotInRange(
 void UChunkLocationData::CheckAndAddTreesNotInRange(TQueue<ATree*>* TreeActorsToRemove) {
 	TreeChunkSemaphore->Acquire();
 
-	// Getting the chunk coordinates from tree chunk spawn points
-	TArray<FIntPoint> Keys = TreeChunkSpawnPoints.Array();
-
-	WTSR->CheckAndReturnTreesNotInRange(Keys, TreeActorsToRemove);
+	WTSR->CheckAndReturnTreesNotInRange(TreeChunkSpawnPoints, TreeActorsToRemove);
 
 	TreeChunkSemaphore->Release();
 }
@@ -238,10 +355,7 @@ void UChunkLocationData::CheckAndAddTreesNotInRange(TQueue<ATree*>* TreeActorsTo
 void UChunkLocationData::CheckAndAddNpcsNotInRange(TQueue<ABasicNPC*>* NpcActorsToRemove) {
 	NpcChunkSemaphore->Acquire();
 
-	// Getting the chunk coordinates from NPC chunk spawn points
-	TArray<FIntPoint> Keys = NpcChunkSpawnPoints.Array();
-
-	WTSR->CheckAndReturnNpcsNotInRange(Keys, NpcActorsToRemove);
+	WTSR->CheckAndReturnNpcsNotInRange(NpcChunkSpawnPoints, NpcActorsToRemove);
 
 	NpcChunkSemaphore->Release();
 }
@@ -329,125 +443,48 @@ TArray<TPair<FVoxelObjectLocationData, AnimalType>> UChunkLocationData::getNPCSp
 	return output;
 }
 
-TArray<FVoxelObjectLocationData> UChunkLocationData::getTreeSpawnPositionsInRange() {
+TArray<FVoxelObjectLocationData> UChunkLocationData::getTreeSpawnPositionsInRange(const FIntPoint& PriorityChunkPosition) {
 	TArray<FVoxelObjectLocationData> output;
 	TreeChunkSemaphore->Acquire();
 	TreesToSpawnSemaphore->Acquire();
 
-	FIntPoint KeyToRemove = FIntPoint::ZeroValue;
-	bool bFoundSpawnPositions = false;
-
-	for (const FIntPoint& ChunkPosition : treesInRangeSpawnPositions) {
-		if (TArray<FVoxelObjectLocationData>* SpawnPositions = treesSpawnPositions.Find(ChunkPosition)) {
-			if (SpawnPositions->Num() > 0) {
-				output = *SpawnPositions;
-				SpawnPositions->Empty();
-
-				// Storing the key to remove it from the map
-				KeyToRemove = ChunkPosition;
-				bFoundSpawnPositions = true;
-				break;
-			}
-		}
-	}
-
-	if (bFoundSpawnPositions) {
-		treesInRangeSpawnPositions.Remove(KeyToRemove);
-	}
+	output = TakeNearestSpawnPositions(treesInRangeSpawnPositions, treesSpawnPositions, PriorityChunkPosition);
 
 	TreesToSpawnSemaphore->Release();
 	TreeChunkSemaphore->Release();
 	return output;
 }
 
-TArray<FVoxelObjectLocationData> UChunkLocationData::getGrassSpawnPositionInRange() {
+TArray<FVoxelObjectLocationData> UChunkLocationData::getGrassSpawnPositionInRange(const FIntPoint& PriorityChunkPosition) {
 	TArray<FVoxelObjectLocationData> output;
 	VegetationChunkSemaphore->Acquire();
 	GrassToSpawnSemaphore->Acquire();
 
-	FIntPoint KeyToRemove = FIntPoint::ZeroValue;
-	bool bFoundSpawnPositions = false;
-
-	for (const FIntPoint& ChunkPosition : grassInRangeSpawnPositions) {
-		if (TArray<FVoxelObjectLocationData>* SpawnPositions = grassSpawnPositions.Find(ChunkPosition)) {
-			if (SpawnPositions->Num() > 0) {
-				output = *SpawnPositions;
-
-				// Storing the key to remove it from the map
-				KeyToRemove = ChunkPosition;
-				bFoundSpawnPositions = true;
-
-				SpawnPositions->Empty();
-				break;
-			}
-		}
-	}
-
-	if (bFoundSpawnPositions) {
-		grassInRangeSpawnPositions.Remove(KeyToRemove);
-	}
+	output = TakeNearestSpawnPositions(grassInRangeSpawnPositions, grassSpawnPositions, PriorityChunkPosition);
 
 	GrassToSpawnSemaphore->Release();
 	VegetationChunkSemaphore->Release();
 	return output;
 }
 
-TArray<FVoxelObjectLocationData> UChunkLocationData::getFlowerSpawnPositionInRange() {
+TArray<FVoxelObjectLocationData> UChunkLocationData::getFlowerSpawnPositionInRange(const FIntPoint& PriorityChunkPosition) {
 	TArray<FVoxelObjectLocationData> output;
 	VegetationChunkSemaphore->Acquire();
 	FlowersToSpawnSemaphore->Acquire();
 
-	FIntPoint KeyToRemove = FIntPoint::ZeroValue;
-	bool bFoundSpawnPositions = false;
-
-	for (const FIntPoint& ChunkPosition : flowersInRangeSpawnPositions) {
-		if (TArray<FVoxelObjectLocationData>* SpawnPositions = flowersSpawnPositions.Find(ChunkPosition)) {
-			if (SpawnPositions->Num() > 0) {
-				output = *SpawnPositions;
-				SpawnPositions->Empty();
-
-				// Storing the key to remove it from the map
-				KeyToRemove = ChunkPosition;
-				bFoundSpawnPositions = true;
-				break;
-			}
-		}
-	}
-
-	if (bFoundSpawnPositions) {
-		flowersInRangeSpawnPositions.Remove(KeyToRemove);
-	}
+	output = TakeNearestSpawnPositions(flowersInRangeSpawnPositions, flowersSpawnPositions, PriorityChunkPosition);
 
 	FlowersToSpawnSemaphore->Release();
 	VegetationChunkSemaphore->Release();
 	return output;
 }
 
-TArray<TPair<FVoxelObjectLocationData, AnimalType>> UChunkLocationData::getNPCSpawnPositionInRange() {
+TArray<TPair<FVoxelObjectLocationData, AnimalType>> UChunkLocationData::getNPCSpawnPositionInRange(const FIntPoint& PriorityChunkPosition) {
 	TArray<TPair<FVoxelObjectLocationData, AnimalType>> output;
 	NpcChunkSemaphore->Acquire();
 	NPCToSpawnSemaphore->Acquire();
 
-	FIntPoint KeyToRemove = FIntPoint::ZeroValue;
-	bool bFoundSpawnPositions = false;
-
-	for (const FIntPoint& ChunkPosition : npcInRangeSpawnPositions) {
-		if (TArray<TPair<FVoxelObjectLocationData, AnimalType>>* SpawnPositions = npcSpawnPositions.Find(ChunkPosition)) {
-			if (SpawnPositions->Num() > 0) {
-				output = *SpawnPositions;
-				SpawnPositions->Empty();
-
-				// Storing the key to remove it from the map
-				KeyToRemove = ChunkPosition;
-				bFoundSpawnPositions = true;
-				break;
-			}
-		}
-	}
-
-	if (bFoundSpawnPositions) {
-		npcInRangeSpawnPositions.Remove(KeyToRemove);
-	}
+	output = TakeNearestSpawnPositions(npcInRangeSpawnPositions, npcSpawnPositions, PriorityChunkPosition);
 
 	NPCToSpawnSemaphore->Release();
 	NpcChunkSemaphore->Release();
@@ -455,6 +492,10 @@ TArray<TPair<FVoxelObjectLocationData, AnimalType>> UChunkLocationData::getNPCSp
 }
 
 void UChunkLocationData::addTreeSpawnPosition(const FVoxelObjectLocationData position) {
+	if (!IsChunkSpawnRequested(position.ObjectWorldCoords)) {
+		return;
+	}
+
 	TreesToSpawnSemaphore->Acquire();
 
 	// If it exists, add the new tree position to the existing array
@@ -469,6 +510,10 @@ void UChunkLocationData::addTreeSpawnPosition(const FVoxelObjectLocationData pos
 }
 
 void UChunkLocationData::addGrassSpawnPosition(const FVoxelObjectLocationData position) {
+	if (!IsChunkSpawnRequested(position.ObjectWorldCoords)) {
+		return;
+	}
+
 	GrassToSpawnSemaphore->Acquire();
 
 	// If it exists, add the new grass position to the existing array
@@ -483,6 +528,10 @@ void UChunkLocationData::addGrassSpawnPosition(const FVoxelObjectLocationData po
 }
 
 void UChunkLocationData::addFlowerSpawnPosition(const FVoxelObjectLocationData position) {
+	if (!IsChunkSpawnRequested(position.ObjectWorldCoords)) {
+		return;
+	}
+
 	FlowersToSpawnSemaphore->Acquire();
 
 	// If it exists, add the new flower position to the existing array
@@ -497,6 +546,10 @@ void UChunkLocationData::addFlowerSpawnPosition(const FVoxelObjectLocationData p
 }
 
 void UChunkLocationData::addNPCSpawnPosition(const TPair<FVoxelObjectLocationData, AnimalType> positionAndType) {
+	if (!IsChunkSpawnRequested(positionAndType.Key.ObjectWorldCoords)) {
+		return;
+	}
+
 	NPCToSpawnSemaphore->Acquire();
 
 	// If it exists, add the new NPC position to the existing array
@@ -511,6 +564,10 @@ void UChunkLocationData::addNPCSpawnPosition(const TPair<FVoxelObjectLocationDat
 }
 
 void UChunkLocationData::addTreeSpawnPositions(const TArray<FVoxelObjectLocationData>& positions) {
+	if (positions.IsEmpty() || !IsChunkSpawnRequested(positions[0].ObjectWorldCoords)) {
+		return;
+	}
+
 	TreesToSpawnSemaphore->Acquire();
 	for (const FVoxelObjectLocationData& pos : positions) {
 		if (treesSpawnPositions.Contains(pos.ObjectWorldCoords)) {
@@ -523,6 +580,10 @@ void UChunkLocationData::addTreeSpawnPositions(const TArray<FVoxelObjectLocation
 }
 
 void UChunkLocationData::addGrassSpawnPositions(const TArray<FVoxelObjectLocationData>& positions) {
+	if (positions.IsEmpty() || !IsChunkSpawnRequested(positions[0].ObjectWorldCoords)) {
+		return;
+	}
+
 	GrassToSpawnSemaphore->Acquire();
 	for (const FVoxelObjectLocationData& pos : positions) {
 		if (grassSpawnPositions.Contains(pos.ObjectWorldCoords)) {
@@ -535,6 +596,10 @@ void UChunkLocationData::addGrassSpawnPositions(const TArray<FVoxelObjectLocatio
 }
 
 void UChunkLocationData::addFlowerSpawnPositions(const TArray<FVoxelObjectLocationData>& positions) {
+	if (positions.IsEmpty() || !IsChunkSpawnRequested(positions[0].ObjectWorldCoords)) {
+		return;
+	}
+
 	FlowersToSpawnSemaphore->Acquire();
 	for (const FVoxelObjectLocationData& pos : positions) {
 		if (flowersSpawnPositions.Contains(pos.ObjectWorldCoords)) {
@@ -547,6 +612,10 @@ void UChunkLocationData::addFlowerSpawnPositions(const TArray<FVoxelObjectLocati
 }
 
 void UChunkLocationData::addNPCSpawnPositions(const TArray<TPair<FVoxelObjectLocationData, AnimalType>>& positionsAndTypes) {
+	if (positionsAndTypes.IsEmpty() || !IsChunkSpawnRequested(positionsAndTypes[0].Key.ObjectWorldCoords)) {
+		return;
+	}
+
 	NPCToSpawnSemaphore->Acquire();
 	for (const TPair<FVoxelObjectLocationData, AnimalType>& entry : positionsAndTypes) {
 		const FIntPoint& key = entry.Key.ObjectWorldCoords;
@@ -648,6 +717,10 @@ bool UChunkLocationData::GetUnspawnedNpcToDestroy(ABasicNPC* InNpcToDestroy) {
 }
 
 void UChunkLocationData::AddSurfaceVoxelPointsForChunk(const FIntPoint& chunkPosition, const TArray<int>& voxelPoints, const TArray<FVector2D>& avoidPoints) {
+	if (!IsChunkSpawnRequested(chunkPosition)) {
+		return;
+	}
+
 	SurfaceVoxelPointsSemaphore->Acquire();
 	NavigationSurfaceChunks.Add(chunkPosition, FNavigationSurfaceChunk{voxelPoints, avoidPoints});
 	SurfaceVoxelPointsSemaphore->Release();
